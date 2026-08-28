@@ -9,11 +9,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
-  PlusIcon, TrashIcon, UserPlusIcon, KeyIcon, EyeIcon, EyeSlashIcon, CopyIcon, ShieldCheckIcon,
+  PlusIcon, TrashIcon, UserPlusIcon, KeyIcon, EyeIcon, EyeSlashIcon, CopyIcon, ShieldCheckIcon, LockKeyIcon,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
-const empty = { name: "", email: "", role: "operator", pin: "" };
+const empty = { name: "", email: "", role: "operator", pin: "", username: "", password: "" };
 
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
@@ -22,6 +22,7 @@ export default function UsersPage() {
 
   const [pinDialog, setPinDialog] = useState(null); // { user, pin }
   const [verifyDialog, setVerifyDialog] = useState(null); // { user, pinInput }
+  const [passwordDialog, setPasswordDialog] = useState(null); // { user, password }
   const [showPin, setShowPin] = useState({}); // { user_id: bool }
 
   const load = async () => {
@@ -41,17 +42,33 @@ export default function UsersPage() {
   const addManual = async () => {
     if (!form.name.trim()) { toast.error("Nama wajib diisi"); return; }
     if (form.pin && !/^\d{4,6}$/.test(form.pin)) { toast.error("PIN harus 4-6 digit angka"); return; }
+    if (form.username && !form.password) { toast.error("Isi password untuk username"); return; }
+    if (form.password && form.password.length < 4) { toast.error("Password minimal 4 karakter"); return; }
     try {
       await api.post("/users/manual", {
         name: form.name.trim(),
         email: form.email.trim() || null,
         role: form.role,
         pin: form.pin || null,
+        username: form.username.trim() || null,
+        password: form.password || null,
       });
       toast.success("Operator ditambahkan");
       setOpen(false); setForm(empty); load();
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Gagal menambahkan");
+    }
+  };
+
+  const savePassword = async () => {
+    const pw = (passwordDialog.password || "").trim();
+    if (!pw || pw.length < 4) { toast.error("Password minimal 4 karakter"); return; }
+    try {
+      await api.patch(`/users/${passwordDialog.user.user_id}/password`, { password: pw });
+      toast.success("Password diperbarui");
+      setPasswordDialog(null);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Gagal menyimpan password");
     }
   };
 
@@ -149,6 +166,36 @@ export default function UsersPage() {
                     PIN dipakai untuk verifikasi handover shift. Bisa di-reset kapan saja.
                   </p>
                 </div>
+
+                <div className="border-t border-border pt-3">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-primary mb-2">// Akun Login (Opsional)</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Username</Label>
+                      <Input
+                        data-testid="input-manual-username"
+                        className="rounded-sm mt-1.5 font-mono"
+                        placeholder="andi_op"
+                        value={form.username}
+                        onChange={e => setForm({ ...form, username: e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "") })}
+                      />
+                    </div>
+                    <div>
+                      <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Password (min 4)</Label>
+                      <Input
+                        data-testid="input-manual-password"
+                        className="rounded-sm mt-1.5 font-mono"
+                        placeholder="••••••"
+                        type="text"
+                        value={form.password}
+                        onChange={e => setForm({ ...form, password: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <p className="mt-1.5 font-mono text-[10px] text-muted-foreground">
+                    Isi keduanya jika operator perlu login sendiri lewat halaman login. Kosongkan jika hanya pencatatan.
+                  </p>
+                </div>
               </div>
               <DialogFooter>
                 <Button data-testid="save-manual-operator-button" onClick={addManual} className="rounded-sm bg-primary hover:bg-primary/90 text-black hover:text-black">
@@ -185,7 +232,14 @@ export default function UsersPage() {
                     <span className="font-medium">{u.name}</span>
                   </div>
                 </td>
-                <td className="p-3 font-mono text-muted-foreground text-xs">{u.email}</td>
+                <td className="p-3 font-mono text-muted-foreground text-xs">
+                  {u.username ? (
+                    <div>
+                      <div>{u.email}</div>
+                      <div className="text-primary/80 mt-0.5">@{u.username}</div>
+                    </div>
+                  ) : u.email}
+                </td>
                 <td className="p-3">
                   <Badge className={`rounded-sm text-[9px] font-mono uppercase tracking-widest px-1.5 py-0 ${u.manual ? "bg-secondary text-foreground" : "bg-primary/20 text-primary border border-primary/40"}`}>
                     {u.manual ? "Manual" : "Google"}
@@ -252,6 +306,16 @@ export default function UsersPage() {
                             title="Verifikasi PIN"
                           >
                             <ShieldCheckIcon size={14} weight="bold" />
+                          </button>
+                        )}
+                        {u.username && (
+                          <button
+                            data-testid={`reset-password-${u.user_id}`}
+                            onClick={() => setPasswordDialog({ user: u, password: "" })}
+                            className="p-1.5 border border-border hover:border-primary hover:text-primary"
+                            title="Reset Password"
+                          >
+                            <LockKeyIcon size={14} weight="bold" />
                           </button>
                         )}
                         <button
@@ -332,6 +396,41 @@ export default function UsersPage() {
           <DialogFooter>
             <Button data-testid="verify-pin-button" onClick={verifyPin} className="rounded-sm bg-primary hover:bg-primary/90 text-black hover:text-black">
               Verifikasi
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset Password dialog */}
+      <Dialog open={!!passwordDialog} onOpenChange={(v) => { if (!v) setPasswordDialog(null); }}>
+        <DialogContent className="rounded-sm border-border bg-card">
+          <DialogHeader>
+            <DialogTitle className="font-display font-black tracking-tighter text-2xl flex items-center gap-2">
+              <LockKeyIcon size={22} weight="bold" className="text-primary" /> Reset Password
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">Operator: <span className="font-medium text-foreground">{passwordDialog?.user?.name}</span> · Username: <span className="font-mono text-primary">@{passwordDialog?.user?.username}</span></p>
+            <div>
+              <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Password Baru (min 4 karakter)</Label>
+              <Input
+                data-testid="input-new-password"
+                className="rounded-sm mt-1.5 font-mono text-center text-lg"
+                placeholder="••••••••"
+                type="text"
+                value={passwordDialog?.password || ""}
+                onChange={e => setPasswordDialog({ ...passwordDialog, password: e.target.value })}
+                onKeyDown={e => { if (e.key === "Enter") savePassword(); }}
+                autoFocus
+              />
+              <p className="mt-1.5 font-mono text-[10px] text-muted-foreground">
+                Setelah simpan, beritahu operator password baru untuk login.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button data-testid="save-password-button" onClick={savePassword} className="rounded-sm bg-primary hover:bg-primary/90 text-black hover:text-black">
+              Simpan
             </Button>
           </DialogFooter>
         </DialogContent>

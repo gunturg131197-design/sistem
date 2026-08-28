@@ -5,6 +5,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import uuid
+import bcrypt
 import httpx
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
@@ -21,6 +22,22 @@ db = client[os.environ['DB_NAME']]
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
+
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
+
+
+def normalize_username(u: str) -> str:
+    return (u or "").strip().lower()
+
 
 # Admin allowlist (owner)
 ADMIN_EMAILS = {"shanchidean@gmail.com"}
@@ -150,6 +167,17 @@ class ManualOperatorCreate(BaseModel):
     email: Optional[str] = None
     role: str = "operator"
     pin: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+
+
+class PasswordUpdate(BaseModel):
+    password: str
+
+
+class UsernameLogin(BaseModel):
+    username: str
+    password: str
 
 
 class PinUpdate(BaseModel):
@@ -317,6 +345,21 @@ async def create_manual_operator(body: ManualOperatorCreate, admin: User = Depen
     if body.role not in {"admin", "operator"}:
         raise HTTPException(status_code=400, detail="Role tidak valid")
     pin = _validate_pin(body.pin)
+
+    username = normalize_username(body.username) if body.username else None
+    password_hash = None
+    if username or body.password:
+        if not username:
+            raise HTTPException(status_code=400, detail="Username wajib diisi jika password diberikan")
+        if not body.password or len(body.password) < 4:
+            raise HTTPException(status_code=400, detail="Password minimal 4 karakter")
+        if not username.replace("_", "").replace(".", "").replace("-", "").isalnum():
+            raise HTTPException(status_code=400, detail="Username hanya boleh huruf, angka, . _ -")
+        taken = await db.users.find_one({"username": username}, {"_id": 0})
+        if taken:
+            raise HTTPException(status_code=400, detail="Username sudah dipakai")
+        password_hash = hash_password(body.password)
+
     user_id = f"user_manual_{uuid.uuid4().hex[:10]}"
     email = (body.email or f"{user_id}@manual.local").strip().lower()
     existing = await db.users.find_one({"email": email}, {"_id": 0})
@@ -330,11 +373,66 @@ async def create_manual_operator(body: ManualOperatorCreate, admin: User = Depen
         "role": body.role,
         "manual": True,
         "pin": pin,
+        "username": username,
+        "password_hash": password_hash,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.users.insert_one(doc)
     doc.pop("_id", None)
+    doc.pop("password_hash", None)
     return doc
+
+
+@api_router.patch("/users/{user_id}/password")
+async def update_password(user_id: str, body: PasswordUpdate, admin: User = Depends(require_admin)):
+    user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan")
+    if not user_doc.get("manual"):
+        raise HTTPException(status_code=400, detail="Password hanya untuk operator manual")
+    if not user_doc.get("username"):
+        raise HTTPException(status_code=400, detail="Set username lebih dulu")
+    if not body.password or len(body.password) < 4:
+        raise HTTPException(status_code=400, detail="Password minimal 4 karakter")
+    await db.users.update_one({"user_id": user_id}, {"$set": {"password_hash": hash_password(body.password)}})
+    return {"ok": True}
+
+
+@api_router.post("/auth/login")
+async def login_with_password(body: UsernameLogin, response: Response):
+    username = normalize_username(body.username)
+    if not username or not body.password:
+        raise HTTPException(status_code=400, detail="Username & password wajib diisi")
+    user_doc = await db.users.find_one({"username": username}, {"_id": 0})
+    if not user_doc or not user_doc.get("password_hash"):
+        raise HTTPException(status_code=401, detail="Username atau password salah")
+    if not verify_password(body.password, user_doc["password_hash"]):
+        raise HTTPException(status_code=401, detail="Username atau password salah")
+
+    session_token = f"local_{uuid.uuid4().hex}"
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    await db.user_sessions.insert_one({
+        "user_id": user_doc["user_id"],
+        "session_token": session_token,
+        "expires_at": expires_at.isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    response.set_cookie(
+        key="session_token",
+        value=session_token,
+        max_age=7 * 24 * 60 * 60,
+        httponly=True,
+        secure=True,
+        samesite="none",
+        path="/",
+    )
+    return {
+        "user_id": user_doc["user_id"],
+        "email": user_doc.get("email", ""),
+        "name": user_doc["name"],
+        "picture": user_doc.get("picture", ""),
+        "role": user_doc.get("role", "operator"),
+    }
 
 
 @api_router.patch("/users/{user_id}/pin")

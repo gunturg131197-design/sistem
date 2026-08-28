@@ -1,12 +1,41 @@
-import React from "react";
-import { GoogleLogoIcon, BulldozerIcon } from "@phosphor-icons/react";
+import React, { useState } from "react";
+import { GoogleLogoIcon, BulldozerIcon, UserIcon, LockIcon, ArrowRightIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+import api from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { useNavigate } from "react-router-dom";
 
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 export default function Login() {
+  const { setUser } = useAuth();
+  const navigate = useNavigate();
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+
   const handleGoogleLogin = () => {
     const redirectUrl = window.location.origin + "/";
     window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+  };
+
+  const handlePasswordLogin = async (e) => {
+    e.preventDefault();
+    if (!username || !password) { toast.error("Username & password wajib diisi"); return; }
+    setLoading(true);
+    try {
+      const { data } = await api.post("/auth/login", { username, password });
+      setUser(data);
+      toast.success(`Selamat datang, ${data.name}`);
+      navigate("/", { replace: true });
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Login gagal");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -35,31 +64,66 @@ export default function Login() {
               </p>
             </div>
 
+            {/* Username/password login */}
+            <form onSubmit={handlePasswordLogin} className="space-y-3 border border-border p-5 bg-muted/20">
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-primary">// Login Operator (Akun Manual)</p>
+              <div>
+                <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Username</Label>
+                <div className="relative mt-1.5">
+                  <UserIcon size={14} weight="bold" className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    data-testid="login-username-input"
+                    className="rounded-sm pl-9"
+                    autoComplete="username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="username_operator"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Password</Label>
+                <div className="relative mt-1.5">
+                  <LockIcon size={14} weight="bold" className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    data-testid="login-password-input"
+                    className="rounded-sm pl-9"
+                    type="password"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                  />
+                </div>
+              </div>
+              <Button
+                data-testid="login-submit-button"
+                type="submit"
+                disabled={loading}
+                className="w-full h-11 rounded-sm bg-primary text-black font-display font-black tracking-tight hover:bg-primary/90 hover:text-black flex items-center justify-center gap-2"
+              >
+                {loading ? "MEMPROSES…" : (<><ArrowRightIcon size={16} weight="bold" /> LOGIN</>)}
+              </Button>
+            </form>
+
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-border" />
+              <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">atau</span>
+              <div className="flex-1 h-px bg-border" />
+            </div>
+
             <div className="space-y-3">
               <Button
                 data-testid="google-login-button"
                 onClick={handleGoogleLogin}
-                className="w-full h-14 rounded-sm bg-primary text-black font-display font-black tracking-tight text-base hover:bg-primary/90 hover:text-black flex items-center justify-center gap-3"
+                className="w-full h-12 rounded-sm bg-secondary text-foreground font-display font-black tracking-tight text-sm hover:bg-primary hover:text-black flex items-center justify-center gap-3 border border-border"
               >
-                <GoogleLogoIcon size={22} weight="bold" />
+                <GoogleLogoIcon size={20} weight="bold" />
                 LOGIN DENGAN GOOGLE
               </Button>
               <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
-                Access granted via Emergent SSO · Role-based · Encrypted session
+                Untuk admin / owner · access via Emergent SSO
               </p>
-            </div>
-
-            <div className="grid grid-cols-3 gap-0 border border-border">
-              {[
-                { k: "01", v: "Unit Registry" },
-                { k: "02", v: "Ops Reports" },
-                { k: "03", v: "Payroll & Parts" },
-              ].map((it) => (
-                <div key={it.k} className="p-4 border-r border-border last:border-r-0">
-                  <p className="font-mono text-[10px] text-primary">{it.k}</p>
-                  <p className="font-display font-black text-sm mt-1 tracking-tight">{it.v}</p>
-                </div>
-              ))}
             </div>
           </div>
 
