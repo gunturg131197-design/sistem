@@ -8,6 +8,7 @@ import {
   MoneyIcon,
   WrenchIcon,
   UsersThreeIcon,
+  HardHatIcon,
   SignOutIcon,
   BulldozerIcon,
 } from "@phosphor-icons/react";
@@ -20,6 +21,7 @@ const navItems = [
   { to: "/operations", label: "Ops Report", icon: ClockCounterClockwiseIcon, testid: "nav-operations" },
   { to: "/payroll", label: "Payroll", icon: MoneyIcon, testid: "nav-payroll" },
   { to: "/spareparts", label: "Sparepart", icon: WrenchIcon, testid: "nav-spareparts" },
+  { to: "/pengurus", label: "Pengurus", icon: HardHatIcon, testid: "nav-pengurus" },
   { to: "/users", label: "Operators", icon: UsersThreeIcon, testid: "nav-users", adminOnly: true },
 ];
 

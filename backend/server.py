@@ -126,6 +126,21 @@ class SparepartCreate(BaseModel):
     biaya: float
 
 
+class PengurusExcavator(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    nama: str
+    kontak: Optional[str] = ""
+    catatan: Optional[str] = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class PengurusExcavatorCreate(BaseModel):
+    nama: str
+    kontak: Optional[str] = ""
+    catatan: Optional[str] = ""
+
+
 class RoleUpdate(BaseModel):
     role: str
 
@@ -401,17 +416,100 @@ async def delete_unit(unit_id: str, admin: User = Depends(require_admin)):
 
 @api_router.get("/pengurus")
 async def list_pengurus(user: User = Depends(get_current_user)):
-    """Distinct pengurus names across units and operations (case-insensitive)."""
+    """Distinct pengurus names across registry + units + operations (case-insensitive)."""
+    names_registry = await db.pengurus_excavator.distinct("nama")
     names_units = await db.units.distinct("pengurus")
     names_ops = await db.operations.distinct("pengurus")
     seen = {}
-    for n in list(names_units) + list(names_ops):
+    for n in list(names_registry) + list(names_units) + list(names_ops):
         if not n or not isinstance(n, str):
             continue
         key = n.strip().lower()
         if key and key not in seen:
             seen[key] = n.strip()
     return sorted(seen.values(), key=lambda s: s.lower())
+
+
+# ---------- Pengurus Excavator Registry ----------
+@api_router.get("/pengurus-excavator", response_model=List[PengurusExcavator])
+async def list_pengurus_excavator(user: User = Depends(get_current_user)):
+    docs = await db.pengurus_excavator.find({}, {"_id": 0}).sort("nama", 1).to_list(1000)
+    # count usage across units + operations
+    for d in docs:
+        if isinstance(d.get("created_at"), str):
+            d["created_at"] = datetime.fromisoformat(d["created_at"])
+    return docs
+
+
+@api_router.get("/pengurus-excavator/{pid}/stats")
+async def pengurus_stats(pid: str, user: User = Depends(get_current_user)):
+    doc = await db.pengurus_excavator.find_one({"id": pid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Pengurus tidak ditemukan")
+    nama = doc["nama"]
+    # case-insensitive match
+    regex = {"$regex": f"^{nama}$", "$options": "i"}
+    units_count = await db.units.count_documents({"pengurus": regex})
+    ops = await db.operations.find({"pengurus": regex}, {"_id": 0}).to_list(5000)
+    total_cars = sum(o.get("jumlah_cars", 0) for o in ops)
+    total_jam = sum(o.get("total_jam", 0) for o in ops)
+    return {
+        "nama": nama,
+        "units_count": units_count,
+        "ops_count": len(ops),
+        "total_cars": total_cars,
+        "total_jam": round(total_jam, 2),
+    }
+
+
+@api_router.post("/pengurus-excavator", response_model=PengurusExcavator)
+async def create_pengurus_excavator(body: PengurusExcavatorCreate, admin: User = Depends(require_admin)):
+    nama = body.nama.strip()
+    if not nama:
+        raise HTTPException(status_code=400, detail="Nama wajib diisi")
+    existing = await db.pengurus_excavator.find_one(
+        {"nama": {"$regex": f"^{nama}$", "$options": "i"}}, {"_id": 0}
+    )
+    if existing:
+        raise HTTPException(status_code=400, detail="Pengurus dengan nama ini sudah ada")
+    obj = PengurusExcavator(nama=nama, kontak=(body.kontak or "").strip(), catatan=(body.catatan or "").strip())
+    doc = obj.model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    await db.pengurus_excavator.insert_one(doc)
+    return obj
+
+
+@api_router.patch("/pengurus-excavator/{pid}", response_model=PengurusExcavator)
+async def update_pengurus_excavator(pid: str, body: PengurusExcavatorCreate, admin: User = Depends(require_admin)):
+    current = await db.pengurus_excavator.find_one({"id": pid}, {"_id": 0})
+    if not current:
+        raise HTTPException(status_code=404, detail="Pengurus tidak ditemukan")
+    new_nama = body.nama.strip()
+    if not new_nama:
+        raise HTTPException(status_code=400, detail="Nama wajib diisi")
+    old_nama = current["nama"]
+    await db.pengurus_excavator.update_one(
+        {"id": pid},
+        {"$set": {"nama": new_nama, "kontak": (body.kontak or "").strip(), "catatan": (body.catatan or "").strip()}},
+    )
+    # Cascade rename in units + operations (case-insensitive)
+    if new_nama != old_nama:
+        regex = {"$regex": f"^{old_nama}$", "$options": "i"}
+        await db.units.update_many({"pengurus": regex}, {"$set": {"pengurus": new_nama}})
+        await db.operations.update_many({"pengurus": regex}, {"$set": {"pengurus": new_nama}})
+    doc = await db.pengurus_excavator.find_one({"id": pid}, {"_id": 0})
+    if isinstance(doc.get("created_at"), str):
+        doc["created_at"] = datetime.fromisoformat(doc["created_at"])
+    return doc
+
+
+@api_router.delete("/pengurus-excavator/{pid}")
+async def delete_pengurus_excavator(pid: str, admin: User = Depends(require_admin)):
+    doc = await db.pengurus_excavator.find_one({"id": pid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Pengurus tidak ditemukan")
+    await db.pengurus_excavator.delete_one({"id": pid})
+    return {"ok": True}
 
 
 # ---------- Operations ----------
