@@ -130,6 +130,25 @@ class ManualOperatorCreate(BaseModel):
     name: str
     email: Optional[str] = None
     role: str = "operator"
+    pin: Optional[str] = None
+
+
+class PinUpdate(BaseModel):
+    pin: Optional[str] = None  # empty/None to clear
+
+
+class PinVerify(BaseModel):
+    user_id: str
+    pin: str
+
+
+def _validate_pin(pin: Optional[str]) -> Optional[str]:
+    if pin is None or pin == "":
+        return None
+    p = pin.strip()
+    if not (p.isdigit() and 4 <= len(p) <= 6):
+        raise HTTPException(status_code=400, detail="PIN harus 4-6 digit angka")
+    return p
 
 
 # ---------- Auth helpers ----------
@@ -278,6 +297,7 @@ async def create_manual_operator(body: ManualOperatorCreate, admin: User = Depen
         raise HTTPException(status_code=400, detail="Nama wajib diisi")
     if body.role not in {"admin", "operator"}:
         raise HTTPException(status_code=400, detail="Role tidak valid")
+    pin = _validate_pin(body.pin)
     user_id = f"user_manual_{uuid.uuid4().hex[:10]}"
     email = (body.email or f"{user_id}@manual.local").strip().lower()
     existing = await db.users.find_one({"email": email}, {"_id": 0})
@@ -290,11 +310,40 @@ async def create_manual_operator(body: ManualOperatorCreate, admin: User = Depen
         "picture": "",
         "role": body.role,
         "manual": True,
+        "pin": pin,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.users.insert_one(doc)
     doc.pop("_id", None)
     return doc
+
+
+@api_router.patch("/users/{user_id}/pin")
+async def update_pin(user_id: str, body: PinUpdate, admin: User = Depends(require_admin)):
+    user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan")
+    if not user_doc.get("manual"):
+        raise HTTPException(status_code=400, detail="PIN hanya untuk operator manual")
+    pin = _validate_pin(body.pin)
+    await db.users.update_one({"user_id": user_id}, {"$set": {"pin": pin}})
+    return {"ok": True, "pin": pin}
+
+
+@api_router.post("/users/verify-pin")
+async def verify_pin(body: PinVerify, user: User = Depends(get_current_user)):
+    target = await db.users.find_one({"user_id": body.user_id}, {"_id": 0})
+    if not target or not target.get("manual"):
+        raise HTTPException(status_code=404, detail="Operator manual tidak ditemukan")
+    stored = target.get("pin")
+    if not stored:
+        raise HTTPException(status_code=400, detail="Operator ini belum punya PIN")
+    ok = stored == body.pin.strip()
+    return {
+        "ok": ok,
+        "user_id": target["user_id"],
+        "name": target["name"],
+    }
 
 
 @api_router.delete("/users/{user_id}")
