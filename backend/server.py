@@ -462,6 +462,49 @@ async def pengurus_stats(pid: str, user: User = Depends(get_current_user)):
     }
 
 
+@api_router.get("/pengurus-excavator/{pid}/monthly")
+async def pengurus_monthly(pid: str, months: int = 12, user: User = Depends(get_current_user)):
+    """Return monthly breakdown of cars & jam for the pengurus (last N months)."""
+    doc = await db.pengurus_excavator.find_one({"id": pid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Pengurus tidak ditemukan")
+    nama = doc["nama"]
+    regex = {"$regex": f"^{nama}$", "$options": "i"}
+    ops = await db.operations.find({"pengurus": regex}, {"_id": 0}).to_list(10000)
+
+    # Group by YYYY-MM
+    monthly = {}
+    for o in ops:
+        d = o.get("tanggal", "")
+        if not d or len(d) < 7:
+            continue
+        key = d[:7]  # YYYY-MM
+        monthly.setdefault(key, {"month": key, "cars": 0, "jam": 0.0, "ops": 0})
+        monthly[key]["cars"] += o.get("jumlah_cars", 0)
+        monthly[key]["jam"] += o.get("total_jam", 0)
+        monthly[key]["ops"] += 1
+
+    # Build continuous last N months window ending at latest month with data or now
+    from datetime import date as _date
+    today = datetime.now(timezone.utc).date()
+    result = []
+    year, month = today.year, today.month
+    keys = []
+    for _ in range(months):
+        keys.append(f"{year:04d}-{month:02d}")
+        month -= 1
+        if month == 0:
+            month = 12
+            year -= 1
+    keys.reverse()
+    for k in keys:
+        row = monthly.get(k, {"month": k, "cars": 0, "jam": 0.0, "ops": 0})
+        row["jam"] = round(row["jam"], 2)
+        result.append(row)
+
+    return {"nama": nama, "monthly": result}
+
+
 @api_router.post("/pengurus-excavator", response_model=PengurusExcavator)
 async def create_pengurus_excavator(body: PengurusExcavatorCreate, admin: User = Depends(require_admin)):
     nama = body.nama.strip()

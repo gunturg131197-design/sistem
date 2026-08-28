@@ -11,9 +11,13 @@ import {
 } from "@/components/ui/dialog";
 import {
   UserPlusIcon, PencilSimpleIcon, TrashIcon, HardHatIcon, ChartBarIcon,
-  PhoneIcon, PlusIcon,
+  PhoneIcon, PlusIcon, ChartLineUpIcon,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  ComposedChart, Line,
+} from "recharts";
 
 const empty = { nama: "", kontak: "", catatan: "" };
 
@@ -25,6 +29,8 @@ export default function PengurusPage() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(empty);
   const [editId, setEditId] = useState(null);
+  const [chartData, setChartData] = useState(null); // { nama, monthly[] }
+  const [chartLoading, setChartLoading] = useState(false);
 
   const load = async () => {
     const { data } = await api.get("/pengurus-excavator");
@@ -59,6 +65,20 @@ export default function PengurusPage() {
       toast.success("Terhapus"); load();
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Gagal menghapus");
+    }
+  };
+
+  const showChart = async (pid) => {
+    setChartLoading(true);
+    setChartData({ nama: "", monthly: [] });
+    try {
+      const { data } = await api.get(`/pengurus-excavator/${pid}/monthly?months=12`);
+      setChartData(data);
+    } catch (e) {
+      toast.error("Gagal memuat grafik");
+      setChartData(null);
+    } finally {
+      setChartLoading(false);
     }
   };
 
@@ -166,6 +186,14 @@ export default function PengurusPage() {
                     <td className="p-3 text-right">
                       <div className="inline-flex gap-1">
                         <button
+                          data-testid={`chart-pengurus-${r.id}`}
+                          onClick={() => showChart(r.id)}
+                          className="p-1.5 border border-border hover:border-primary hover:text-primary"
+                          title="Rekap Bulanan"
+                        >
+                          <ChartLineUpIcon size={14} weight="bold" />
+                        </button>
+                        <button
                           data-testid={`edit-pengurus-${r.id}`}
                           onClick={() => { setForm({ nama: r.nama, kontak: r.kontak || "", catatan: r.catatan || "" }); setEditId(r.id); setOpen(true); }}
                           className="p-1.5 border border-border hover:border-primary hover:text-primary"
@@ -188,6 +216,71 @@ export default function PengurusPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Monthly chart dialog */}
+      <Dialog open={!!chartData} onOpenChange={(v) => { if (!v) setChartData(null); }}>
+        <DialogContent className="rounded-sm border-border bg-card max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="font-display font-black tracking-tighter text-2xl flex items-center gap-2">
+              <ChartLineUpIcon size={22} weight="bold" className="text-primary" />
+              Rekap Bulanan — <span className="text-primary">{chartData?.nama}</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+              // 12 bulan terakhir · cars diproduksi & jam operasi yang diawasi
+            </p>
+
+            {chartLoading ? (
+              <div className="h-72 flex items-center justify-center text-muted-foreground font-mono text-xs">
+                Loading…
+              </div>
+            ) : (
+              <>
+                {/* Trend chart */}
+                <div className="h-72 border border-border p-3">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={chartData?.monthly || []}>
+                      <CartesianGrid stroke="#27272A" strokeDasharray="0" vertical={false} />
+                      <XAxis dataKey="month" stroke="#71717A" fontSize={10} tickLine={false} />
+                      <YAxis yAxisId="left" stroke="#EAB308" fontSize={10} tickLine={false} />
+                      <YAxis yAxisId="right" orientation="right" stroke="#3B82F6" fontSize={10} tickLine={false} />
+                      <Tooltip contentStyle={{ background: "#09090B", border: "1px solid #27272A", borderRadius: 0, fontSize: 12 }} />
+                      <Legend wrapperStyle={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.2em" }} />
+                      <Bar yAxisId="left" dataKey="cars" name="Cars" fill="#EAB308" />
+                      <Line yAxisId="right" type="monotone" dataKey="jam" name="Jam" stroke="#3B82F6" strokeWidth={2.5} dot={{ fill: "#3B82F6", r: 3 }} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Table breakdown */}
+                <div className="border border-border max-h-56 overflow-y-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted/50 sticky top-0">
+                      <tr className="text-left font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+                        <th className="p-2">Bulan</th>
+                        <th className="p-2 text-right">Cars</th>
+                        <th className="p-2 text-right">Jam</th>
+                        <th className="p-2 text-right">Laporan</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(chartData?.monthly || []).map((m) => (
+                        <tr key={m.month} className={`border-t border-border ${m.cars || m.jam ? "" : "opacity-50"}`}>
+                          <td className="p-2 font-mono">{m.month}</td>
+                          <td className="p-2 text-right font-mono text-primary">{m.cars}</td>
+                          <td className="p-2 text-right font-mono">{m.jam.toFixed ? m.jam.toFixed(2) : m.jam}</td>
+                          <td className="p-2 text-right font-mono text-muted-foreground">{m.ops}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
