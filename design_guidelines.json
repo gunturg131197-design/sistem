@@ -1,0 +1,113 @@
+{
+  "theme": "dark",
+  "typography": {
+    "heading_font": "Chivo",
+    "body_font": "IBM Plex Sans",
+    "heading_weight": "font-black",
+    "body_weight": "font-normal",
+    "rules": [
+      "No generic fonts for headings (NEVER use Inter for headings).",
+      "Headings must use tight letter spacing: tracking-tighter.",
+      "Overlines/Labels: Uppercase, Tiny, Wide Spacing (tracking-[0.2em]).",
+      "Do not exceed text-6xl for the maximum heading size.",
+      "Hierarchy gap between heading and subheading must not exceed 2 Tailwind steps."
+    ]
+  },
+  "colors": {
+    "archetype": "The Performance Pro / High-Contrast Industrial",
+    "background": "#09090B",
+    "foreground": "#FAFAFA",
+    "primary": "#EAB308",
+    "primary_foreground": "#000000",
+    "secondary": "#27272A",
+    "secondary_foreground": "#FAFAFA",
+    "accent": "#FF3B30",
+    "muted": "#18181B",
+    "muted_foreground": "#A1A1AA",
+    "border": "#27272A",
+    "rules": [
+      "Use Deep Obsidian base with Safety Yellow as the primary interaction color.",
+      "Avoid 'Vibrating' Lime. Use High-Vis Yellow/Amber.",
+      "Tint neutral greys slightly to make them feel alive.",
+      "Ensure minimum 4.5:1 contrast ratio for normal text."
+    ]
+  },
+  "visual_enhancers": {
+    "surface_strategy": "Grid Borders (The Technical Look) & Flat Solid surfaces.",
+    "corners": "Sharp edges, max 2px border-radius (rounded-sm) for a rugged industrial feel.",
+    "borders": "1px solid strokes (border-border). No soft shadows.",
+    "textures": "Use subtle noise/grain or blueprint grids over flat backgrounds.",
+    "rules": [
+      "No Glassmorphism. Use flat solid surfaces for data clarity in this industrial app.",
+      "Never use full-screen gradients.",
+      "DO NOT use complete transparent backgrounds for dropdowns, overlays, or sticky headers."
+    ]
+  },
+  "layouts": {
+    "dashboard_mode": "High Density Grid (Mode B)",
+    "grid_structure": "grid-cols-1 md:grid-cols-3 lg:grid-cols-4 with gap-4 or gap-6.",
+    "spacing_philosophy": "Dense and compact spacing for data correlation in dashboards. Generous padding in forms.",
+    "alignment": "Left-align paragraphs, labels, dense content. Mobile-first grids.",
+    "navigation": "Fixed Sidebar or Top Navigation Cockpit. Must have solid background, no transparency."
+  },
+  "components": {
+    "forms": "Use Shadcn components. Strip default soft styles, make them sharp and rugged.",
+    "tables": "Use Shadcn Data Table. Dense rows for data correlation.",
+    "charts": "Use Recharts or Shadcn charts. Color-blind-friendly industrial palettes (Yellow, Orange, Blue, Gray).",
+    "buttons": "Sharp buttons (rounded-sm) with strong hover interaction (hover:bg-primary/90 hover:text-black).",
+    "cards": "Go cardless or use flat, rectangular, dense styles with 1px border. No shadows."
+  },
+  "motion": {
+    "animations": "Minimalist micro-interactions. No bouncing or over-the-top animations.",
+    "hover_states": "ALWAYS explicitly set text color on hover. Slight lift or border color darken for cards.",
+    "accessibility": "Respect prefers-reduced-motion."
+  },
+  "accessibility": {
+    "contrast": "Meet APCA/WCAG standards. Focus states must have higher contrast.",
+    "testing": "All interactive and key informational elements MUST include a `data-testid` attribute (e.g., login-submit-button, operator-payroll-table).",
+    "forms": "Ensure clear error states and validation messages."
+  },
+  "media": {
+    "image_urls": {
+      "login_background": {
+        "url": "https://images.unsplash.com/photo-1575281923032-f40d94ef6160?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzZ8MHwxfHNlYXJjaHwxfHxleGNhdmF0b3IlMjBjb25zdHJ1Y3Rpb24lMjBzaXRlfGVufDB8fHx8MTc4NzkxMTY3NXww&ixlib=rb-4.1.0&q=85",
+        "description": "Teal excavator dumping soil into yellow truck, industrial construction scene."
+      },
+      "dashboard_hero": {
+        "url": "https://images.pexels.com/photos/38735193/pexels-photo-38735193.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Yellow excavator working on site, perfect for header or banner."
+      },
+      "spare_parts_banner": {
+        "url": "https://images.unsplash.com/photo-1580901369227-308f6f40bdeb?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTV8MHwxfHNlYXJjaHwxfHxoZWF2eSUyMGVxdWlwbWVudCUyMHNwYXJlJTIwcGFydHN8ZW58MHx8fHwxNzg3OTExNjc1fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Yellow and black excavator parts, suitable for spare parts module."
+      }
+    },
+    "icons": {
+      "library": "Phosphor Icons",
+      "install_command": "yarn add @phosphor-icons/react",
+      "style": "Use for dense dashboards and operational precision."
+    }
+  },
+  "instructions_to_main_agent": [
+    "Use dark mode as the default for this industrial dashboard.",
+    "Implement a role-based layout (Admin vs Operator) ensuring operators only see their own data.",
+    "Use Phosphor Icons for a technical, precise look.",
+    "Customize Shadcn UI to have sharp edges (`rounded-sm` or `rounded-none`) and flat borders.",
+    "Use Sonner for toasts (yarn add sonner), configure it in /app/frontend/src/components/ui/sonner.js.",
+    "DO NOT use raw HTML inputs/selects for complex interactions, use Shadcn equivalents.",
+    "Ensure the dashboard features summary charts using Recharts.",
+    "Apply `data-testid` attributes to all actionable elements.",
+    "No centered layouts for dense text. Align left."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "You tend to converge toward generic, 'on distribution' outputs. Avoid this.",
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "You MUST NOT apply universal transition (e.g., transition: all). Add transitions for specific elements excluding transforms.",
+    "You MUST NOT center align the app container (.App { text-align: center; } is strictly forbidden).",
+    "Always use modern button styles (sharp/rugged for this theme) with interaction animations.",
+    "NEVER use AI assistant Emoji characters (like robot, brain, lightbulb) for icons.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "Prioritize using pre-existing components from src/components/ui when applicable."
+  ]
+}

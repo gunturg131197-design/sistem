@@ -1,0 +1,54 @@
+{
+  "summary": "Executed full backend smoke suite against REACT_APP_BACKEND_URL. 25 of 26 checks passed. Auth (bearer + unauth 401 + invalid session_id 401), Units CRUD + RBAC, Operations CRUD + auto-computed total_jam + operator scoping + unit not found 404, Payroll (auto gaji_bersih, admin-only mutations, operator own scope), Spareparts (admin mutations, operator 403, delete admin), Dashboard summary shape, User role management (admin PATCH, invalid role 400, operator PATCH 403). One HIGH-priority bug: POST /api/auth/logout does not invalidate bearer-token sessions (only clears cookie). One MEDIUM: PATCH /api/units/{id} requires all fields (not truly partial).",
+  "tested_scope": ["backend", "auth", "integration"],
+  "passed": [
+    "GET /api/auth/me unauthenticated -> 401",
+    "POST /api/auth/session invalid session_id -> 401 {detail: Invalid session id}",
+    "GET /api/auth/me with admin bearer -> 200 role=admin",
+    "GET /api/auth/me with operator bearer -> 200 role=operator",
+    "POST /api/units admin -> 200 with id",
+    "GET /api/units -> 200",
+    "PATCH /api/units/{id} admin (full body) -> 200",
+    "DELETE /api/units/{id} admin -> 200",
+    "POST /api/units operator -> 403",
+    "PATCH /api/units/{id} operator -> 403",
+    "DELETE /api/units/{id} operator -> 403",
+    "POST /api/operations unit_id not found -> 404",
+    "POST /api/operations admin -> 200, total_jam auto = akhir-awal (10.0)",
+    "POST /api/operations operator -> 200, total_jam auto (15.0)",
+    "GET /api/operations admin sees all (2 records)",
+    "GET /api/operations operator sees only own (1 record, operator_id=user_op_test)",
+    "POST /api/payroll admin -> gaji_bersih auto = 5000000-500000 = 4500000",
+    "POST /api/payroll operator -> 403",
+    "GET /api/payroll operator sees only own",
+    "DELETE /api/payroll operator -> 403; admin -> 200",
+    "POST /api/spareparts admin -> 200 (fields: nomor_nota, nama_sparepart, biaya)",
+    "POST /api/spareparts operator -> 403",
+    "DELETE /api/spareparts operator -> 403; admin -> 200",
+    "GET /api/dashboard/summary returns {totals:{total_jam,total_cars,total_biaya_sparepart,total_units}, per_unit[], daily[]}",
+    "PATCH /api/users/{id}/role admin invalid role -> 400 'Invalid role'",
+    "PATCH /api/users/{id}/role operator -> 403",
+    "PATCH /api/users/{id}/role admin valid -> 200 {ok:true}"
+  ],
+  "failed": [
+    {
+      "area": "auth/logout",
+      "issue": "POST /api/auth/logout does NOT invalidate a bearer-token session. After calling logout with Authorization: Bearer test_operator_token (no cookie), the endpoint returned 200 but the subsequent GET /api/auth/me with the same bearer token still returned 200 instead of 401. Root cause in /app/backend/server.py L235-239: logout() only reads session_token from Cookie and never inspects the Authorization header, so bearer-token sessions are never deleted from db.user_sessions.",
+      "evidence": "POST /api/auth/logout -H 'Authorization: Bearer test_operator_token' -> 200 {\"ok\":true}; immediately after GET /api/auth/me with same bearer -> 200 (expected 401).",
+      "priority": "HIGH"
+    },
+    {
+      "area": "units/PATCH",
+      "issue": "PATCH /api/units/{id} rejects partial updates. Sending only {unit_name:'...'} returns 422 requiring nomor_lambung and serial_number. PATCH semantics should allow partial fields; either accept partial body or document that full body is required (or switch to PUT).",
+      "evidence": "PATCH /api/units/{id} body {unit_name:'EX-Test-01-updated'} -> 422 with pydantic 'Field required' for nomor_lambung, serial_number.",
+      "priority": "MEDIUM"
+    }
+  ],
+  "action_items": [
+    "Fix logout: in /app/backend/server.py logout() also accept Authorization: Bearer <token>; reuse get_current_user's token extraction to delete matching user_sessions row.",
+    "Make PATCH /api/units/{id} accept a partial-update pydantic model (all fields Optional) so admins can update one field at a time."
+  ],
+  "success_rate": {"backend": "92%", "frontend": "not_tested"},
+  "retest_needed": true,
+  "full_testing_deferred": true
+}
