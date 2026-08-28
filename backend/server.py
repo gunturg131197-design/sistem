@@ -49,6 +49,7 @@ class Unit(BaseModel):
     serial_number: str
     operator_id: Optional[str] = None  # assigned operator user_id
     operator_name: Optional[str] = None
+    pengurus: Optional[str] = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -58,6 +59,7 @@ class UnitCreate(BaseModel):
     serial_number: str
     operator_id: Optional[str] = None
     operator_name: Optional[str] = None
+    pengurus: Optional[str] = ""
 
 
 class Operation(BaseModel):
@@ -71,6 +73,7 @@ class Operation(BaseModel):
     hour_meter_awal: float
     hour_meter_akhir: float
     jumlah_cars: int
+    pengurus: Optional[str] = ""
     total_jam: float = 0.0
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -81,6 +84,7 @@ class OperationCreate(BaseModel):
     hour_meter_awal: float
     hour_meter_akhir: float
     jumlah_cars: int
+    pengurus: Optional[str] = ""
 
 
 class Payroll(BaseModel):

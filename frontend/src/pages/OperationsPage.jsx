@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import { exportToExcel, exportToPDF } from "@/lib/exporters";
 import { format, parseISO } from "date-fns";
 
-const empty = { unit_id: "", tanggal: format(new Date(), "yyyy-MM-dd"), hour_meter_awal: "", hour_meter_akhir: "", jumlah_cars: "" };
+const empty = { unit_id: "", tanggal: format(new Date(), "yyyy-MM-dd"), hour_meter_awal: "", hour_meter_akhir: "", jumlah_cars: "", pengurus: "" };
 
 export default function OperationsPage() {
   const { user } = useAuth();
@@ -43,6 +43,7 @@ export default function OperationsPage() {
         hour_meter_awal: Number(form.hour_meter_awal),
         hour_meter_akhir: Number(form.hour_meter_akhir),
         jumlah_cars: Number(form.jumlah_cars),
+        pengurus: form.pengurus || "",
       });
       toast.success("Laporan operasional tersimpan");
       setOpen(false); setForm(empty); load();
@@ -56,6 +57,7 @@ export default function OperationsPage() {
 
   const exportRows = rows.map(r => ({
     Tanggal: r.tanggal, Unit: r.unit_label, Operator: r.operator_name,
+    Pengurus: r.pengurus || "-",
     "HM Awal": r.hour_meter_awal, "HM Akhir": r.hour_meter_akhir,
     "Total Jam": r.total_jam, "Jumlah Cars": r.jumlah_cars,
   }));
@@ -74,8 +76,8 @@ export default function OperationsPage() {
             <Button data-testid="export-pdf-ops" variant="outline" className="rounded-sm border-border hover:border-primary hover:text-primary"
               onClick={() => exportToPDF({
                 title: "Laporan Operasional Excavator",
-                columns: ["Tanggal", "Unit", "Operator", "HM Awal", "HM Akhir", "Total Jam", "Cars"],
-                rows: rows.map(r => [r.tanggal, r.unit_label, r.operator_name, r.hour_meter_awal, r.hour_meter_akhir, r.total_jam, r.jumlah_cars]),
+                columns: ["Tanggal", "Unit", "Operator", "Pengurus", "HM Awal", "HM Akhir", "Total Jam", "Cars"],
+                rows: rows.map(r => [r.tanggal, r.unit_label, r.operator_name, r.pengurus || "-", r.hour_meter_awal, r.hour_meter_akhir, r.total_jam, r.jumlah_cars]),
                 filename: "operations-report",
               })}>
               <FilePdfIcon size={16} weight="bold" className="mr-2" /> PDF
@@ -126,6 +128,10 @@ export default function OperationsPage() {
                     <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Jumlah Cars Baru</Label>
                     <Input data-testid="input-jumlah-cars" type="number" className="rounded-sm mt-1.5" value={form.jumlah_cars} onChange={e => setForm({ ...form, jumlah_cars: e.target.value })} />
                   </div>
+                  <div className="col-span-2">
+                    <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Pengurus Cars</Label>
+                    <Input data-testid="input-op-pengurus" className="rounded-sm mt-1.5" placeholder="Nama pengurus / PIC cars produksi hari ini" value={form.pengurus} onChange={e => setForm({ ...form, pengurus: e.target.value })} />
+                  </div>
                   {form.hour_meter_awal !== "" && form.hour_meter_akhir !== "" && (
                     <div className="col-span-2 border border-primary/40 bg-primary/5 p-3">
                       <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-primary">// Auto Calculation</p>
@@ -151,6 +157,7 @@ export default function OperationsPage() {
               <th className="p-3">Tanggal</th>
               <th className="p-3">Unit</th>
               <th className="p-3">Operator</th>
+              <th className="p-3">Pengurus</th>
               <th className="p-3 text-right">HM Awal</th>
               <th className="p-3 text-right">HM Akhir</th>
               <th className="p-3 text-right">Total Jam</th>
@@ -159,12 +166,13 @@ export default function OperationsPage() {
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={8} className="p-8 text-center text-muted-foreground text-xs font-mono">// Belum ada laporan</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={9} className="p-8 text-center text-muted-foreground text-xs font-mono">// Belum ada laporan</td></tr>}
             {rows.map(r => (
               <tr key={r.id} className="border-t border-border hover:bg-secondary/30">
                 <td className="p-3 font-mono">{r.tanggal}</td>
                 <td className="p-3 font-medium">{r.unit_label}</td>
                 <td className="p-3 text-muted-foreground">{r.operator_name}</td>
+                <td className="p-3">{r.pengurus || <span className="text-muted-foreground">—</span>}</td>
                 <td className="p-3 text-right font-mono">{r.hour_meter_awal}</td>
                 <td className="p-3 text-right font-mono">{r.hour_meter_akhir}</td>
                 <td className="p-3 text-right font-mono text-primary">{r.total_jam}</td>

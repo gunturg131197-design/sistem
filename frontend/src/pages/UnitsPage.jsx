@@ -13,7 +13,7 @@ import { PlusIcon, TrashIcon, PencilSimpleIcon, FileXlsIcon, FilePdfIcon } from 
 import { toast } from "sonner";
 import { exportToExcel, exportToPDF } from "@/lib/exporters";
 
-const empty = { unit_name: "", nomor_lambung: "", serial_number: "", operator_id: "", operator_name: "" };
+const empty = { unit_name: "", nomor_lambung: "", serial_number: "", operator_id: "", operator_name: "", pengurus: "" };
 
 export default function UnitsPage() {
   const { user } = useAuth();
@@ -59,6 +59,7 @@ export default function UnitsPage() {
     "Nomor Lambung": u.nomor_lambung,
     "Serial Number": u.serial_number,
     Operator: u.operator_name || "-",
+    Pengurus: u.pengurus || "-",
   }));
 
   return (
@@ -75,8 +76,8 @@ export default function UnitsPage() {
             <Button data-testid="export-pdf-units" variant="outline" className="rounded-sm border-border hover:border-primary hover:text-primary"
               onClick={() => exportToPDF({
                 title: "Daftar Unit Excavator",
-                columns: ["Unit", "Nomor Lambung", "Serial Number", "Operator"],
-                rows: units.map(u => [u.unit_name, u.nomor_lambung, u.serial_number, u.operator_name || "-"]),
+                columns: ["Unit", "Nomor Lambung", "Serial Number", "Operator", "Pengurus"],
+                rows: units.map(u => [u.unit_name, u.nomor_lambung, u.serial_number, u.operator_name || "-", u.pengurus || "-"]),
                 filename: "excavator-units",
               })}>
               <FilePdfIcon size={16} weight="bold" className="mr-2" /> PDF
@@ -117,6 +118,11 @@ export default function UnitsPage() {
                         </SelectContent>
                       </Select>
                     </div>
+                    <div>
+                      <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Pengurus Unit</Label>
+                      <Input data-testid="input-unit-pengurus" className="rounded-sm mt-1.5" placeholder="Nama pengurus / PIC unit" value={form.pengurus} onChange={e => setForm({ ...form, pengurus: e.target.value })} />
+                      <p className="mt-1.5 font-mono text-[10px] text-muted-foreground">Penanggung jawab unit di lapangan.</p>
+                    </div>
                   </div>
                   <DialogFooter>
                     <Button data-testid="save-unit-button" onClick={save} className="rounded-sm bg-primary hover:bg-primary/90 text-black hover:text-black">Simpan</Button>
@@ -136,12 +142,13 @@ export default function UnitsPage() {
               <th className="p-3">Nomor Lambung</th>
               <th className="p-3">Serial Number</th>
               <th className="p-3">Operator</th>
+              <th className="p-3">Pengurus</th>
               {isAdmin && <th className="p-3 text-right">Aksi</th>}
             </tr>
           </thead>
           <tbody>
             {units.length === 0 && (
-              <tr><td colSpan={5} className="p-8 text-center text-muted-foreground text-xs font-mono">// Belum ada unit terdaftar</td></tr>
+              <tr><td colSpan={6} className="p-8 text-center text-muted-foreground text-xs font-mono">// Belum ada unit terdaftar</td></tr>
             )}
             {units.map(u => (
               <tr key={u.id} className="border-t border-border hover:bg-secondary/30">
@@ -149,10 +156,11 @@ export default function UnitsPage() {
                 <td className="p-3 font-mono text-primary">{u.nomor_lambung}</td>
                 <td className="p-3 font-mono text-muted-foreground">{u.serial_number}</td>
                 <td className="p-3">{u.operator_name || <span className="text-muted-foreground">—</span>}</td>
+                <td className="p-3">{u.pengurus || <span className="text-muted-foreground">—</span>}</td>
                 {isAdmin && (
                   <td className="p-3 text-right">
                     <div className="inline-flex gap-1">
-                      <button data-testid={`edit-unit-${u.id}`} onClick={() => { setForm({ unit_name: u.unit_name, nomor_lambung: u.nomor_lambung, serial_number: u.serial_number, operator_id: u.operator_id || "", operator_name: u.operator_name || "" }); setEditId(u.id); setOpen(true); }} className="p-1.5 border border-border hover:border-primary hover:text-primary">
+                      <button data-testid={`edit-unit-${u.id}`} onClick={() => { setForm({ unit_name: u.unit_name, nomor_lambung: u.nomor_lambung, serial_number: u.serial_number, operator_id: u.operator_id || "", operator_name: u.operator_name || "", pengurus: u.pengurus || "" }); setEditId(u.id); setOpen(true); }} className="p-1.5 border border-border hover:border-primary hover:text-primary">
                         <PencilSimpleIcon size={14} weight="bold" />
                       </button>
                       <button data-testid={`delete-unit-${u.id}`} onClick={() => del(u.id)} className="p-1.5 border border-border hover:border-accent hover:text-accent">
