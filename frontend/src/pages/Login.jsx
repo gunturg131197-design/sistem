@@ -19,17 +19,16 @@ export default function Login() {
               <BulldozerIcon size={22} weight="fill" className="text-black" />
             </div>
             <div>
-              <p className="font-display font-black text-sm tracking-tighter">EXCAVA<span className="text-primary">.OPS</span></p>
+              <p className="font-display font-black text-sm tracking-tighter">CV.TTP<span className="text-primary">.OPS</span></p>
               <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Heavy Equipment Reporting</p>
             </div>
           </header>
 
           <div className="max-w-lg space-y-8">
             <div>
-              <p className="font-mono text-xs uppercase tracking-[0.2em] text-primary mb-4">// System 01 / Field Command</p>
               <h1 className="font-display font-black text-4xl sm:text-5xl lg:text-6xl tracking-tighter leading-[0.95]">
                 Laporan Alat Berat.<br />
-                <span className="text-primary text-glow-yellow">Presisi Militer.</span>
+                <span className="text-primary text-glow-yellow">TRIRARA TUNGGAL PUTRA</span>
               </h1>
               <p className="mt-6 text-base text-muted-foreground max-w-md">
                 Sistem pelaporan operasional excavator — hour meter, produksi cars, gaji operator, dan penggantian sparepart dalam satu cockpit terpadu.
