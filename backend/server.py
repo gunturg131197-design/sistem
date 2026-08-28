@@ -399,6 +399,21 @@ async def delete_unit(unit_id: str, admin: User = Depends(require_admin)):
     return {"ok": True}
 
 
+@api_router.get("/pengurus")
+async def list_pengurus(user: User = Depends(get_current_user)):
+    """Distinct pengurus names across units and operations (case-insensitive)."""
+    names_units = await db.units.distinct("pengurus")
+    names_ops = await db.operations.distinct("pengurus")
+    seen = {}
+    for n in list(names_units) + list(names_ops):
+        if not n or not isinstance(n, str):
+            continue
+        key = n.strip().lower()
+        if key and key not in seen:
+            seen[key] = n.strip()
+    return sorted(seen.values(), key=lambda s: s.lower())
+
+
 # ---------- Operations ----------
 @api_router.get("/operations", response_model=List[Operation])
 async def list_operations(user: User = Depends(get_current_user)):

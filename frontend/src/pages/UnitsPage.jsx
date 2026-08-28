@@ -12,6 +12,7 @@ import {
 import { PlusIcon, TrashIcon, PencilSimpleIcon, FileXlsIcon, FilePdfIcon } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { exportToExcel, exportToPDF } from "@/lib/exporters";
+import PengurusCombobox from "@/components/PengurusCombobox";
 
 const empty = { unit_name: "", nomor_lambung: "", serial_number: "", operator_id: "", operator_name: "", pengurus: "" };
 
@@ -20,14 +21,18 @@ export default function UnitsPage() {
   const isAdmin = user?.role === "admin";
   const [units, setUnits] = useState([]);
   const [operators, setOperators] = useState([]);
+  const [pengurusOptions, setPengurusOptions] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(empty);
   const [editId, setEditId] = useState(null);
 
   const load = async () => {
-    const [u, us] = await Promise.all([api.get("/units"), api.get("/users")]);
+    const [u, us, pg] = await Promise.all([
+      api.get("/units"), api.get("/users"), api.get("/pengurus"),
+    ]);
     setUnits(u.data);
     setOperators(us.data);
+    setPengurusOptions(pg.data);
   };
   useEffect(() => { load(); }, []);
 
@@ -120,8 +125,14 @@ export default function UnitsPage() {
                     </div>
                     <div>
                       <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Pengurus Unit</Label>
-                      <Input data-testid="input-unit-pengurus" className="rounded-sm mt-1.5" placeholder="Nama pengurus / PIC unit" value={form.pengurus} onChange={e => setForm({ ...form, pengurus: e.target.value })} />
-                      <p className="mt-1.5 font-mono text-[10px] text-muted-foreground">Penanggung jawab unit di lapangan.</p>
+                      <PengurusCombobox
+                        testid="input-unit-pengurus"
+                        value={form.pengurus}
+                        onChange={(v) => setForm({ ...form, pengurus: v })}
+                        options={pengurusOptions}
+                        placeholder="Pilih atau ketik nama pengurus…"
+                      />
+                      <p className="mt-1.5 font-mono text-[10px] text-muted-foreground">Pilih dari yang tersimpan atau ketik nama baru.</p>
                     </div>
                   </div>
                   <DialogFooter>

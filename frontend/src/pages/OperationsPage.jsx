@@ -13,6 +13,7 @@ import { PlusIcon, TrashIcon, CalendarBlankIcon, FileXlsIcon, FilePdfIcon } from
 import { toast } from "sonner";
 import { exportToExcel, exportToPDF } from "@/lib/exporters";
 import { format, parseISO } from "date-fns";
+import PengurusCombobox from "@/components/PengurusCombobox";
 
 const empty = { unit_id: "", tanggal: format(new Date(), "yyyy-MM-dd"), hour_meter_awal: "", hour_meter_akhir: "", jumlah_cars: "", pengurus: "" };
 
@@ -20,12 +21,15 @@ export default function OperationsPage() {
   const { user } = useAuth();
   const [rows, setRows] = useState([]);
   const [units, setUnits] = useState([]);
+  const [pengurusOptions, setPengurusOptions] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(empty);
 
   const load = async () => {
-    const [ops, u] = await Promise.all([api.get("/operations"), api.get("/units")]);
-    setRows(ops.data); setUnits(u.data);
+    const [ops, u, pg] = await Promise.all([
+      api.get("/operations"), api.get("/units"), api.get("/pengurus"),
+    ]);
+    setRows(ops.data); setUnits(u.data); setPengurusOptions(pg.data);
   };
   useEffect(() => { load(); }, []);
 
@@ -130,7 +134,13 @@ export default function OperationsPage() {
                   </div>
                   <div className="col-span-2">
                     <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Pengurus Cars</Label>
-                    <Input data-testid="input-op-pengurus" className="rounded-sm mt-1.5" placeholder="Nama pengurus / PIC cars produksi hari ini" value={form.pengurus} onChange={e => setForm({ ...form, pengurus: e.target.value })} />
+                    <PengurusCombobox
+                      testid="input-op-pengurus"
+                      value={form.pengurus}
+                      onChange={(v) => setForm({ ...form, pengurus: v })}
+                      options={pengurusOptions}
+                      placeholder="Pilih atau ketik nama pengurus cars…"
+                    />
                   </div>
                   {form.hour_meter_awal !== "" && form.hour_meter_akhir !== "" && (
                     <div className="col-span-2 border border-primary/40 bg-primary/5 p-3">
