@@ -9,6 +9,7 @@ import UnitsPage from "@/pages/UnitsPage";
 import OperationsPage from "@/pages/OperationsPage";
 import PayrollPage from "@/pages/PayrollPage";
 import SparepartsPage from "@/pages/SparepartsPage";
+import ReportsPage from "@/pages/ReportsPage";
 import UsersPage from "@/pages/UsersPage";
 import PengurusPage from "@/pages/PengurusPage";
 import AppShell from "@/components/AppShell";
@@ -45,6 +46,7 @@ function AppRouter() {
       <Route path="/operations" element={<ProtectedRoute><OperationsPage /></ProtectedRoute>} />
       <Route path="/payroll" element={<ProtectedRoute><PayrollPage /></ProtectedRoute>} />
       <Route path="/spareparts" element={<ProtectedRoute><SparepartsPage /></ProtectedRoute>} />
+      <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
       <Route path="/pengurus" element={<ProtectedRoute><PengurusPage /></ProtectedRoute>} />
       <Route path="/users" element={<ProtectedRoute adminOnly><UsersPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />

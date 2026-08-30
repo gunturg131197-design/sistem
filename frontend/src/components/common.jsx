@@ -1,4 +1,5 @@
 import React from "react";
+import { Input } from "@/components/ui/input";
 
 export function PageHeader({ overline, title, description, actions, testid = "page-header" }) {
   return (
@@ -31,6 +32,39 @@ export function StatBox({ label, value, unit, accent = "primary", icon: Icon, te
 }
 
 export function formatIDR(n) {
-  if (n === null || n === undefined) return "Rp 0";
+  if (n === null || n === undefined || n === "") return "Rp 0";
   return "Rp " + Number(n).toLocaleString("id-ID");
+}
+
+// Ambil digit dari string berformat -> number
+export function parseIDR(str) {
+  if (str === null || str === undefined) return "";
+  const digits = String(str).replace(/[^0-9]/g, "");
+  return digits;
+}
+
+function groupThousand(digits) {
+  if (!digits) return "";
+  return Number(digits).toLocaleString("id-ID");
+}
+
+/**
+ * Input mata uang: menampilkan format Rupiah (Rp 1.000.000) sambil mengetik.
+ * value = angka mentah (number|string). onChange(rawNumber:number|"") .
+ */
+export function CurrencyInput({ value, onChange, className = "", ...props }) {
+  const digits = value === "" || value === null || value === undefined ? "" : String(value).replace(/[^0-9]/g, "");
+  const display = digits ? "Rp " + groupThousand(digits) : "";
+  return (
+    <Input
+      {...props}
+      inputMode="numeric"
+      className={className}
+      value={display}
+      onChange={(e) => {
+        const raw = e.target.value.replace(/[^0-9]/g, "");
+        onChange(raw === "" ? "" : Number(raw));
+      }}
+    />
+  );
 }

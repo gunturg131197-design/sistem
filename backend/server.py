@@ -109,18 +109,33 @@ class Payroll(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     operator_id: str
     operator_name: str = ""
+    unit_id: str = ""
+    unit_label: str = ""
     periode: str  # YYYY-MM
-    gaji: float
-    kasbon: float
+    tarif_per_jam: float = 0.0
+    jam_kerja: float = 0.0     # snapshot total jam kerja operator+unit saat dibuat
+    jam_dibayar: float = 0.0   # jam yang dibayarkan pada payroll ini
+    gaji: float = 0.0          # = jam_dibayar * tarif_per_jam
+    kasbon: float = 0.0
     gaji_bersih: float = 0.0
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class PayrollCreate(BaseModel):
     operator_id: str
+    unit_id: str
     periode: str
-    gaji: float
-    kasbon: float
+    tarif_per_jam: float = 0.0
+    jam_dibayar: float = 0.0
+    kasbon: float = 0.0
+
+
+class SparepartItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    nama_sparepart: str
+    qty: float = 1.0
+    harga_satuan: float = 0.0
+    total: float = 0.0
 
 
 class Sparepart(BaseModel):
@@ -129,18 +144,20 @@ class Sparepart(BaseModel):
     unit_id: str
     unit_label: str = ""
     nomor_nota: str
-    nama_sparepart: str
+    nama_sparepart: str = ""  # ringkasan gabungan nama item (legacy/summary)
+    hm_service: Optional[float] = None  # HM saat service dilakukan (kelipatan 250 jam)
+    items: List[SparepartItem] = []
     tanggal: str  # YYYY-MM-DD
-    biaya: float
+    biaya: float = 0.0  # total nota (jumlah semua item)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class SparepartCreate(BaseModel):
     unit_id: str
     nomor_nota: str
-    nama_sparepart: str
     tanggal: str
-    biaya: float
+    hm_service: Optional[float] = None
+    items: List[SparepartItem] = []
 
 
 class PengurusExcavator(BaseModel):
@@ -703,14 +720,46 @@ async def list_payroll(user: User = Depends(get_current_user)):
     return docs
 
 
+async def _compute_operator_hours(operator_id: str, unit_id: str):
+    """Total jam kerja (HM akhir - HM awal) untuk operator+unit & jam yang sudah dibayar."""
+    ops = await db.operations.find(
+        {"operator_id": operator_id, "unit_id": unit_id}, {"_id": 0}
+    ).to_list(10000)
+    total_jam_kerja = sum(o.get("total_jam", 0) for o in ops)
+    pays = await db.payroll.find(
+        {"operator_id": operator_id, "unit_id": unit_id}, {"_id": 0}
+    ).to_list(10000)
+    total_jam_dibayar = sum(p.get("jam_dibayar", 0) for p in pays)
+    return round(total_jam_kerja, 2), round(total_jam_dibayar, 2)
+
+
+@api_router.get("/payroll/hours")
+async def payroll_hours(operator_id: str, unit_id: str, user: User = Depends(get_current_user)):
+    total_jam_kerja, total_jam_dibayar = await _compute_operator_hours(operator_id, unit_id)
+    return {
+        "total_jam_kerja": total_jam_kerja,
+        "total_jam_dibayar": total_jam_dibayar,
+        "jam_belum_dibayar": round(max(0.0, total_jam_kerja - total_jam_dibayar), 2),
+    }
+
+
 @api_router.post("/payroll", response_model=Payroll)
 async def create_payroll(body: PayrollCreate, admin: User = Depends(require_admin)):
     op_user = await db.users.find_one({"user_id": body.operator_id}, {"_id": 0})
     op_name = op_user["name"] if op_user else ""
+    unit = await db.units.find_one({"id": body.unit_id}, {"_id": 0})
+    if not unit:
+        raise HTTPException(status_code=404, detail="Unit tidak ditemukan")
+    unit_label = f"{unit['unit_name']} - {unit['nomor_lambung']}"
+    total_jam_kerja, _ = await _compute_operator_hours(body.operator_id, body.unit_id)
+    gaji = round(body.jam_dibayar * body.tarif_per_jam, 2)
     payroll = Payroll(
         **body.model_dump(),
         operator_name=op_name,
-        gaji_bersih=round(body.gaji - body.kasbon, 2),
+        unit_label=unit_label,
+        jam_kerja=total_jam_kerja,
+        gaji=gaji,
+        gaji_bersih=round(gaji - body.kasbon, 2),
     )
     doc = payroll.model_dump()
     doc["created_at"] = doc["created_at"].isoformat()
@@ -739,8 +788,29 @@ async def create_sparepart(body: SparepartCreate, admin: User = Depends(require_
     unit = await db.units.find_one({"id": body.unit_id}, {"_id": 0})
     if not unit:
         raise HTTPException(status_code=404, detail="Unit tidak ditemukan")
+    if not body.items:
+        raise HTTPException(status_code=400, detail="Minimal 1 sparepart harus ditambahkan")
+    # Hitung total tiap item & total nota
+    items = []
+    total_biaya = 0.0
+    for it in body.items:
+        line_total = round((it.qty or 0) * (it.harga_satuan or 0), 2)
+        items.append(SparepartItem(
+            nama_sparepart=it.nama_sparepart,
+            qty=it.qty,
+            harga_satuan=it.harga_satuan,
+            total=line_total,
+        ))
+        total_biaya += line_total
+    nama_ringkas = ", ".join(i.nama_sparepart for i in items)
     sp = Sparepart(
-        **body.model_dump(),
+        unit_id=body.unit_id,
+        nomor_nota=body.nomor_nota,
+        tanggal=body.tanggal,
+        hm_service=body.hm_service,
+        items=items,
+        nama_sparepart=nama_ringkas,
+        biaya=round(total_biaya, 2),
         unit_label=f"{unit['unit_name']} - {unit['nomor_lambung']}",
     )
     doc = sp.model_dump()
@@ -808,6 +878,63 @@ async def dashboard_summary(user: User = Depends(get_current_user)):
         "per_unit": list(per_unit.values()),
         "daily": daily_list,
     }
+
+
+# ---------- Reports per Unit ----------
+@api_router.get("/reports/units")
+async def reports_units(user: User = Depends(get_current_user)):
+    """Laporan lengkap per unit: cars baru, operator, gaji operator, HM awal/akhir,
+    total HM, dan penggantian sparepart."""
+    unit_query = {} if user.role == "admin" else {"operator_id": user.user_id}
+    units = await db.units.find(unit_query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+
+    op_query = {} if user.role == "admin" else {"operator_id": user.user_id}
+    all_ops = await db.operations.find(op_query, {"_id": 0}).to_list(20000)
+    all_pays = await db.payroll.find({}, {"_id": 0}).to_list(20000)
+    all_sp = await db.spareparts.find({}, {"_id": 0}).to_list(20000)
+
+    reports = []
+    for u in units:
+        uid = u["id"]
+        unit_label = f"{u['unit_name']} - {u['nomor_lambung']}"
+        ops = [o for o in all_ops if o.get("unit_id") == uid]
+        ops_sorted = sorted(ops, key=lambda o: o.get("tanggal", ""))
+        pays = [p for p in all_pays if p.get("unit_id") == uid]
+        sps = [s for s in all_sp if s.get("unit_id") == uid]
+
+        total_cars = sum(o.get("jumlah_cars", 0) for o in ops)
+        total_hm = round(sum(o.get("total_jam", 0) for o in ops), 2)
+        hm_awal = min((o.get("hour_meter_awal", 0) for o in ops), default=0)
+        hm_akhir = max((o.get("hour_meter_akhir", 0) for o in ops), default=0)
+        operators = sorted({o.get("operator_name", "") for o in ops if o.get("operator_name")})
+        total_gaji = round(sum(p.get("gaji", 0) for p in pays), 2)
+        total_kasbon = round(sum(p.get("kasbon", 0) for p in pays), 2)
+        total_gaji_bersih = round(sum(p.get("gaji_bersih", 0) for p in pays), 2)
+        total_sparepart = round(sum(s.get("biaya", 0) for s in sps), 2)
+
+        reports.append({
+            "unit_id": uid,
+            "unit_name": u["unit_name"],
+            "nomor_lambung": u["nomor_lambung"],
+            "serial_number": u.get("serial_number", ""),
+            "unit_label": unit_label,
+            "operator_utama": u.get("operator_name", ""),
+            "operators": operators,
+            "total_cars": total_cars,
+            "hm_awal": hm_awal,
+            "hm_akhir": hm_akhir,
+            "total_hm": total_hm,
+            "total_gaji": total_gaji,
+            "total_kasbon": total_kasbon,
+            "total_gaji_bersih": total_gaji_bersih,
+            "total_sparepart": total_sparepart,
+            "ops_count": len(ops),
+            "operations": ops_sorted,
+            "payroll": pays,
+            "spareparts": sps,
+        })
+
+    return reports
 
 
 app.include_router(api_router)

@@ -101,3 +101,126 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: |
+  Perubahan pada EXCAVA.OPS:
+  1. Nota Sparepart multi-item (nama, qty, harga satuan, total per item + total nota) + kolom HM service (kelipatan 250 jam).
+  2. Semua nilai keuangan tampil format Rupiah (termasuk input live).
+  3. Payroll: pilih unit, jam kerja auto dari Ops (HM akhir-awal), jam dibayar, sisa jam belum dibayar, tarif per jam; gaji = jam dibayar x tarif. 1 payroll = 1 unit.
+  4. Laporan per unit (cars, operator, gaji, HM awal/akhir, total HM, sparepart) + download per unit & semua (PDF+Excel).
+
+backend:
+  - task: "Sparepart multi-item + hm_service"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "POST /spareparts sekarang menerima items[] (nama_sparepart, qty, harga_satuan) + hm_service. Backend hitung total per item & biaya total nota. GET tetum return items[]."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ TESTED & VERIFIED: POST /api/spareparts dengan items[] array berfungsi sempurna. Perhitungan total per item (qty*harga_satuan) benar: Item 1 (Filter Oli x2 @ Rp150k = Rp300k), Item 2 (Bucket Teeth x5 @ Rp200k = Rp1jt). Total biaya nota = Rp1.3jt. hm_service=250 tersimpan. nama_sparepart ringkasan berisi kedua nama item. GET /api/spareparts mengembalikan items[] lengkap."
+  - task: "Payroll per-jam + unit + hours endpoint"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "PayrollCreate menerima unit_id, tarif_per_jam, jam_dibayar, kasbon. gaji=jam_dibayar*tarif. Endpoint baru GET /payroll/hours?operator_id=&unit_id= mengembalikan total_jam_kerja, total_jam_dibayar, jam_belum_dibayar (jam kerja dari operations HM akhir-awal)."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ TESTED & VERIFIED: GET /api/payroll/hours berfungsi sempurna. Sebelum pembayaran: total_jam_kerja=8.0 (dari operations HM 110-118), total_jam_dibayar=0, jam_belum_dibayar=8.0. POST /api/payroll dengan tarif_per_jam=50000, jam_dibayar=8, kasbon=100000 menghasilkan gaji=400000 (8*50000), gaji_bersih=300000 (400k-100k), jam_kerja snapshot=8.0, unit_label terisi. Setelah pembayaran: total_jam_dibayar=8.0, jam_belum_dibayar=0.0. Tracking jam kerja update dengan benar."
+  - task: "Reports per unit endpoint"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "GET /reports/units mengembalikan rekap per unit: total_cars, hm_awal, hm_akhir, total_hm, total_gaji, total_kasbon, total_gaji_bersih, total_sparepart, operators[], serta detail operations/payroll/spareparts."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ TESTED & VERIFIED: GET /api/reports/units berfungsi sempurna. Agregasi data benar: total_cars=8 (5+3), hm_awal=100 (min), hm_akhir=118 (max), total_hm=18.0 (10+8), total_gaji=400000, total_gaji_bersih=300000, total_sparepart=1300000. Operators list berisi semua operator yang bekerja pada unit. RBAC berfungsi: operator hanya melihat unit miliknya."
+
+frontend:
+  - task: "Sparepart multi-item form + Rupiah"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/pages/SparepartsPage.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Form nota dengan tombol Tambah Sparepart, qty, harga satuan (CurrencyInput), total per item & total nota; kolom HM service dengan hint kelipatan 250 jam."
+  - task: "Payroll unit + jam + Rupiah"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/pages/PayrollPage.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Pilihan unit, ringkasan jam kerja/dibayar/belum dibayar (fetch /payroll/hours), tarif per jam & kasbon CurrencyInput, preview gaji bersih."
+  - task: "Reports page"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/pages/ReportsPage.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Halaman /reports rekap per unit + download PDF/Excel per unit & semua unit. Nav 'Laporan' ditambahkan."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.1"
+  test_sequence: 2
+  run_ui: false
+
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    -agent: "main"
+    -message: |
+      Tolong test BACKEND saja. Login manual: POST /api/auth/login dengan admin/admin123 (admin) & budi/budi123 (operator) — cookie session_token dipakai untuk request berikutnya.
+      Fokus test:
+      1) POST /api/spareparts dengan payload {unit_id, nomor_nota, tanggal, hm_service, items:[{nama_sparepart,qty,harga_satuan}, ...]} → verifikasi tiap item.total = qty*harga_satuan & biaya = sum. GET /api/spareparts return items[].
+      2) Buat unit (POST /api/units) & operation (POST /api/operations) sebagai admin agar ada jam kerja. Lalu GET /api/payroll/hours?operator_id=&unit_id= → cek total_jam_kerja sesuai (HM akhir-awal). POST /api/payroll {operator_id,unit_id,periode,tarif_per_jam,jam_dibayar,kasbon} → gaji=jam_dibayar*tarif, gaji_bersih=gaji-kasbon, jam_kerja snapshot terisi. Lalu GET /api/payroll/hours lagi → total_jam_dibayar bertambah, jam_belum_dibayar berkurang.
+      3) GET /api/reports/units → cek agregasi (total_cars, hm_awal, hm_akhir, total_hm, total_gaji, total_sparepart) benar untuk unit yang punya data.
+      4) RBAC: operator (budi) tidak bisa POST /api/spareparts & /api/payroll (harus 403).
+    -agent: "testing"
+    -message: |
+      ✅ BACKEND TESTING COMPLETE - ALL TESTS PASSED (4/4)
+      
+      Tested all backend features with comprehensive test suite (/app/backend_test.py):
+      
+      1. ✅ SPAREPART MULTI-ITEM: POST /api/spareparts dengan items[] array berfungsi sempurna. Semua perhitungan benar (item.total = qty*harga_satuan, biaya total = sum items). hm_service tersimpan. GET /api/spareparts mengembalikan items[] lengkap.
+      
+      2. ✅ PAYROLL PER-JAM: GET /api/payroll/hours menghitung jam kerja dari operations dengan benar (total_jam_kerja, total_jam_dibayar, jam_belum_dibayar). POST /api/payroll menghitung gaji = jam_dibayar*tarif_per_jam, gaji_bersih = gaji-kasbon. jam_kerja snapshot tersimpan. Tracking jam update setelah pembayaran.
+      
+      3. ✅ REPORTS PER UNIT: GET /api/reports/units mengembalikan agregasi yang benar untuk semua field (total_cars, hm_awal/akhir, total_hm, total_gaji, total_gaji_bersih, total_sparepart, operators list).
+      
+      4. ✅ RBAC: Operator (budi) tidak bisa POST /api/spareparts & /api/payroll (403 Forbidden). Operator hanya melihat unit miliknya di reports.
+      
+      Semua backend API berfungsi dengan sempurna. Tidak ada bug atau masalah yang ditemukan.
