@@ -124,6 +124,43 @@ Whitelist IP server Coolify (atau `0.0.0.0/0` untuk uji) di Atlas → Network Ac
 
 ---
 
+## E. Opsi GABUNGAN — satu resource Docker Compose (paling anti-ribet)
+
+Jalankan **mongo + backend + frontend** dalam satu resource. Backend menghubungi Mongo lewat nama
+service `mongo` (tanpa urusan jaringan antar-resource). File: `docker-compose.yml` (root) + `.env.example`.
+
+1. **Edit `frontend/.env.production`** → set `REACT_APP_BACKEND_URL` ke subdomain backend Anda
+   (tanpa `/api`), commit:
+   ```
+   REACT_APP_BACKEND_URL=https://api.sistem.domainanda.com
+   ```
+2. Coolify → **+ New Resource → Docker Compose** (repo yang sama).
+   - **Base Directory**: `/sistem-ttp-cpanel` (folder yang berisi `docker-compose.yml`, sesuaikan repo Anda).
+3. **Environment Variables** (lihat `.env.example`):
+   ```
+   MONGO_ROOT_USERNAME=root
+   MONGO_ROOT_PASSWORD=ganti_password_kuat
+   DB_NAME=ttp_ops
+   CORS_ORIGINS=https://sistem.domainanda.com
+   ADMIN_USERNAME=admin
+   ADMIN_PASSWORD=ganti_password_kuat
+   ADMIN_NAME=Administrator
+   ```
+4. **Atur domain per service** (Coolify mendeteksi 3 service):
+   - `frontend` → `https://sistem.domainanda.com`, port **80**
+   - `backend`  → `https://api.sistem.domainanda.com`, port **8000**
+   - `mongo`    → **tanpa domain** (internal)
+5. Deploy. Data Mongo tersimpan di volume `mongo_data` (persisten).
+6. Login: buka domain frontend → `/login` → Username/Password (`ADMIN_USERNAME`/`ADMIN_PASSWORD`).
+
+> `MONGO_URL` untuk backend **sudah otomatis** dibentuk di `docker-compose.yml`
+> (`mongodb://root:...@mongo:27017/?authSource=admin`) \u2014 Anda tidak perlu menuliskannya manual.
+>
+> **Ingin satu domain saja (tanpa CORS/subdomain backend)?** Beri tahu saya \u2014 saya siapkan varian
+> di mana nginx frontend mem-proxy `/api` ke backend, sehingga cukup satu domain dan `REACT_APP_BACKEND_URL` dikosongkan.
+
+---
+
 ## Catatan & Troubleshooting
 
 - **`.env.production` frontend**: nilainya dibaca saat BUILD (`npm run build`). Jika mengubah URL backend,

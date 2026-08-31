@@ -1,0 +1,61 @@
+# ============================================================
+# EXCAVA.OPS - Compose GABUNGAN untuk Coolify v4 (>= 4.3.14)
+# Satu resource Docker Compose berisi 3 service: mongo + backend + frontend.
+# Keuntungan: backend menghubungi Mongo lewat nama service "mongo"
+# (tanpa urusan jaringan antar-resource).
+# ------------------------------------------------------------
+# Domain (atur di Coolify, per service):
+#   - frontend  -> https://sistem.domainanda.com      (port 80)
+#   - backend   -> https://api.sistem.domainanda.com   (port 8000)
+#   - mongo     -> TANPA domain (internal saja)
+# ============================================================
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USERNAME:-root}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:-ubah_password_ini}
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      # Mongo internal via nama service "mongo" + auth root (authSource=admin wajib)
+      - MONGO_URL=mongodb://${MONGO_ROOT_USERNAME:-root}:${MONGO_ROOT_PASSWORD:-ubah_password_ini}@mongo:27017/?authSource=admin
+      - DB_NAME=${DB_NAME:-ttp_ops}
+      # WAJIB = origin frontend PERSIS (bukan *), karena login pakai cookie berkredensial
+      - CORS_ORIGINS=${CORS_ORIGINS:-https://sistem.domainanda.com}
+      # Admin pertama dibuat otomatis saat DB kosong — GANTI password!
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - ADMIN_NAME=${ADMIN_NAME:-Administrator}
+      - ADMIN_EMAILS=${ADMIN_EMAILS:-}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    expose:
+      - "8000"
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    # Frontend memakai frontend/.env.production (REACT_APP_BACKEND_URL) yang di-bake saat build.
+    # Pastikan .env.production berisi subdomain backend Anda (tanpa /api).
+    expose:
+      - "80"
+
+volumes:
+  mongo_data:
