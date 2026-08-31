@@ -18,8 +18,7 @@ Database : MongoDB Atlas (mongodb+srv://...)      atau Mongo container
 
 1. Coolify → **+ New Resource → Application → Dockerfile / Git**.
 2. Pilih repo Anda.
-3. **Base Directory**: arahkan ke folder backend, mis. `/sistem-ttp-cpanel/backend`
-   (sesuaikan dengan struktur repo GitHub Anda). **Dockerfile**: `/Dockerfile` (relatif thd Base Directory).
+3. **Base Directory**: `/backend`. **Dockerfile**: `/Dockerfile` (relatif thd Base Directory → `/backend/Dockerfile`).
 4. **Port**: `8000` (sesuai `EXPOSE 8000` di Dockerfile).
 5. **Domain**: `https://api.sistem.domainanda.com`.
 6. **Environment Variables** (JANGAN commit ke GitHub):
@@ -53,7 +52,7 @@ Cek sehat: buka `https://api.sistem.domainanda.com/docs` → harus muncul Swagge
    ```
    Kode `src/lib/api.js` menambahkan `/api` otomatis → `https://api.sistem.domainanda.com/api`.
 2. Coolify → **+ New Resource → Application → Dockerfile / Git** (repo yang sama).
-3. **Base Directory**: `/sistem-ttp-cpanel/frontend` (sesuaikan repo Anda). **Dockerfile**: `/Dockerfile`.
+3. **Base Directory**: `/frontend`. **Dockerfile**: `/Dockerfile` (→ `/frontend/Dockerfile`).
 4. **Port**: `80`.
 5. **Domain**: `https://sistem.domainanda.com`.
 6. **Start Command**: kosongkan (Dockerfile sudah `CMD ["nginx","-g","daemon off;"]`). Hapus `npm start`.
@@ -92,7 +91,7 @@ Setelah masuk, tambah operator/admin lain dari menu **Users**.
 File tersedia: `mongodb/docker-compose.yml` (+ `mongodb/.env.example`).
 
 1. Coolify → **+ New Resource → Docker Compose** (repo yang sama).
-2. **Base Directory**: `/sistem-ttp-cpanel/mongodb` (sesuaikan repo Anda) — agar Coolify memakai
+2. **Base Directory**: `/mongodb` — agar Coolify memakai
    `docker-compose.yml` di folder itu.
 3. **Environment Variables** (lihat `mongodb/.env.example`):
    ```
@@ -135,7 +134,7 @@ service `mongo` (tanpa urusan jaringan antar-resource). File: `docker-compose.ym
    REACT_APP_BACKEND_URL=https://api.sistem.domainanda.com
    ```
 2. Coolify → **+ New Resource → Docker Compose** (repo yang sama).
-   - **Base Directory**: `/sistem-ttp-cpanel` (folder yang berisi `docker-compose.yml`, sesuaikan repo Anda).
+   - **Base Directory**: `/` (root repo, berisi `docker-compose.yml`).
 3. **Environment Variables** (lihat `.env.example`):
    ```
    MONGO_ROOT_USERNAME=root
@@ -169,7 +168,7 @@ File: `docker-compose.singledomain.yml`, `frontend/Dockerfile.singledomain`,
 `frontend/nginx.single-domain.conf`, `.env.singledomain.example`.
 
 1. Coolify → **+ New Resource → Docker Compose** (repo yang sama).
-   - **Base Directory**: folder berisi `docker-compose.singledomain.yml` (mis. `/sistem-ttp-cpanel`).
+   - **Base Directory**: `/` (root repo, berisi `docker-compose.singledomain.yml`).
    - **Docker Compose file**: `docker-compose.singledomain.yml` (bila Coolify menanyakan nama file compose).
 2. **Environment Variables** (lihat `.env.singledomain.example`):
    ```
