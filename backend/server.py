@@ -2,6 +2,7 @@ from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depend
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import ReturnDocument
 import os
 import logging
 import uuid
@@ -881,10 +882,36 @@ async def dashboard_summary(user: User = Depends(get_current_user)):
 
 
 # ---------- Reports per Unit ----------
+ROMAN_MONTHS = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]
+
+REPORT_NO_BASE = 199  # nomor urut pertama yang diterbitkan = 200
+
+
+class ReportNumberRequest(BaseModel):
+    month: int
+    year: int
+
+
+@api_router.post("/reports/number")
+async def issue_report_number(body: ReportNumberRequest, user: User = Depends(get_current_user)):
+    """Terbitkan nomor laporan berurutan otomatis: LP/TTP/{seq}/{romawi bulan}/{tahun}."""
+    month = body.month if 1 <= body.month <= 12 else datetime.now(timezone.utc).month
+    year = body.year or datetime.now(timezone.utc).year
+    doc = await db.app_counters.find_one_and_update(
+        {"key": "report_no"},
+        {"$inc": {"value": 1}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    seq = REPORT_NO_BASE + int(doc.get("value", 1))
+    nomor = f"LP/TTP/{seq}/{ROMAN_MONTHS[month]}/{year}"
+    return {"nomor": nomor, "seq": seq, "month": month, "year": year}
+
+
 @api_router.get("/reports/units")
-async def reports_units(user: User = Depends(get_current_user)):
+async def reports_units(periode: Optional[str] = None, user: User = Depends(get_current_user)):
     """Laporan lengkap per unit: cars baru, operator, gaji operator, HM awal/akhir,
-    total HM, dan penggantian sparepart."""
+    total HM, dan penggantian sparepart. Opsional filter periode (YYYY-MM)."""
     unit_query = {} if user.role == "admin" else {"operator_id": user.user_id}
     units = await db.units.find(unit_query, {"_id": 0}).sort("created_at", -1).to_list(1000)
 
@@ -892,6 +919,12 @@ async def reports_units(user: User = Depends(get_current_user)):
     all_ops = await db.operations.find(op_query, {"_id": 0}).to_list(20000)
     all_pays = await db.payroll.find({}, {"_id": 0}).to_list(20000)
     all_sp = await db.spareparts.find({}, {"_id": 0}).to_list(20000)
+
+    # Filter periode (YYYY-MM) bila diberikan
+    if periode:
+        all_ops = [o for o in all_ops if (o.get("tanggal", "") or "").startswith(periode)]
+        all_sp = [s for s in all_sp if (s.get("tanggal", "") or "").startswith(periode)]
+        all_pays = [p for p in all_pays if (p.get("periode", "") or "") == periode]
 
     reports = []
     for u in units:

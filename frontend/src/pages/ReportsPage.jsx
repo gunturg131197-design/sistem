@@ -2,23 +2,44 @@ import React, { useEffect, useState } from "react";
 import api from "@/lib/api";
 import { PageHeader, formatIDR } from "@/components/common";
 import { Button } from "@/components/ui/button";
-import { FileXlsIcon, FilePdfIcon, TruckIcon, ClockIcon, WrenchIcon, MoneyIcon } from "@phosphor-icons/react";
+import { Input } from "@/components/ui/input";
+import { FileXlsIcon, FilePdfIcon, TruckIcon, ClockIcon, WrenchIcon, MoneyIcon, FunnelIcon, XIcon } from "@phosphor-icons/react";
 import { toast } from "sonner";
-import { exportToExcel, exportToExcelMultiSheet, exportToPDF, exportUnitReportPDF } from "@/lib/exporters";
+import { exportToExcelMultiSheet, exportToPDF, exportUnitReportPDF } from "@/lib/exporters";
+
+const BULAN_ID = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 
 export default function ReportsPage() {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [periode, setPeriode] = useState(""); // "" = semua, atau "YYYY-MM"
 
   const load = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get("/reports/units");
+      const { data } = await api.get("/reports/units", { params: periode ? { periode } : {} });
       setReports(data);
     } catch { toast.error("Gagal memuat laporan"); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [periode]);
+
+  const periodeLabel = () => {
+    if (!periode) return "Semua Periode";
+    const [y, m] = periode.split("-");
+    return `${BULAN_ID[Number(m)]} ${y}`;
+  };
+
+  // Terbitkan nomor laporan otomatis dari backend
+  const issueNomor = async () => {
+    let month, year;
+    if (periode) { const [y, m] = periode.split("-"); month = Number(m); year = Number(y); }
+    else { const d = new Date(); month = d.getMonth() + 1; year = d.getFullYear(); }
+    try {
+      const { data } = await api.post("/reports/number", { month, year });
+      return data.nomor;
+    } catch { toast.error("Gagal menerbitkan nomor laporan"); return ""; }
+  };
 
   // ---- Rekap semua unit ----
   const summaryRows = reports.map(r => ({
@@ -35,14 +56,21 @@ export default function ReportsPage() {
     "Total Sparepart": r.total_sparepart,
   }));
 
-  const downloadAllExcel = () => {
-    exportToExcel(summaryRows, "laporan-semua-unit", "Rekap Unit");
-    toast.success("Excel semua unit diunduh");
+  const downloadAllExcel = async () => {
+    const nomor = await issueNomor();
+    exportToExcelMultiSheet([
+      { name: "Info", rows: [{ "Nomor Laporan": nomor, Periode: periodeLabel(), Digenerate: new Date().toLocaleString("id-ID") }] },
+      { name: "Rekap Unit", rows: summaryRows },
+    ], "laporan-semua-unit");
+    toast.success(`Excel diunduh · ${nomor}`);
   };
 
-  const downloadAllPDF = () => {
+  const downloadAllPDF = async () => {
+    const nomor = await issueNomor();
     exportToPDF({
       title: "Laporan Rekap Semua Unit",
+      nomor,
+      periodeLabel: periodeLabel(),
       columns: ["Unit", "No Lambung", "Operator", "Total Cars", "HM Awal", "HM Akhir", "Total HM", "Total Gaji", "Total Sparepart"],
       rows: reports.map(r => [
         r.unit_name, r.nomor_lambung, (r.operators || []).join(", ") || "-",
@@ -50,16 +78,19 @@ export default function ReportsPage() {
       ]),
       filename: "laporan-semua-unit",
     });
-    toast.success("PDF semua unit diunduh");
+    toast.success(`PDF diunduh · ${nomor}`);
   };
 
   // ---- Per unit ----
-  const downloadUnitExcel = (r) => {
+  const downloadUnitExcel = async (r) => {
+    const nomor = await issueNomor();
     const fname = `laporan-${r.unit_name}-${r.nomor_lambung}`.replace(/\s+/g, "_");
     exportToExcelMultiSheet([
       {
         name: "Ringkasan",
         rows: [
+          { Keterangan: "Nomor Laporan", Nilai: nomor },
+          { Keterangan: "Periode", Nilai: periodeLabel() },
           { Keterangan: "Unit", Nilai: r.unit_label },
           { Keterangan: "Serial Number", Nilai: r.serial_number || "-" },
           { Keterangan: "Operator", Nilai: (r.operators || []).join(", ") || "-" },
@@ -97,13 +128,14 @@ export default function ReportsPage() {
         ),
       },
     ], fname);
-    toast.success(`Excel ${r.unit_name} diunduh`);
+    toast.success(`Excel ${r.unit_name} diunduh · ${nomor}`);
   };
 
-  const downloadUnitPDF = (r) => {
+  const downloadUnitPDF = async (r) => {
+    const nomor = await issueNomor();
     const fname = `laporan-${r.unit_name}-${r.nomor_lambung}`.replace(/\s+/g, "_");
-    exportUnitReportPDF(r, fname);
-    toast.success(`PDF ${r.unit_name} diunduh`);
+    exportUnitReportPDF(r, fname, { nomor, periodeLabel: periodeLabel() });
+    toast.success(`PDF ${r.unit_name} diunduh · ${nomor}`);
   };
 
   return (
@@ -111,7 +143,7 @@ export default function ReportsPage() {
       <PageHeader
         overline="// Reports / 05"
         title="Laporan per Unit"
-        description="Rekap lengkap tiap unit: cars baru, operator, gaji operator, HM awal/akhir, total HM, dan penggantian sparepart. Unduh laporan per unit atau seluruh unit sekaligus."
+        description="Rekap lengkap tiap unit: cars baru, operator, gaji operator, HM awal/akhir, total HM, dan penggantian sparepart. Setiap unduhan otomatis diberi nomor laporan resmi."
         actions={
           <>
             <Button data-testid="export-excel-all" variant="outline" className="rounded-sm border-border hover:border-primary hover:text-primary" onClick={downloadAllExcel}>
@@ -124,8 +156,31 @@ export default function ReportsPage() {
         }
       />
 
+      {/* Filter periode */}
+      <div className="flex flex-wrap items-center gap-3 mb-6 border border-border p-3 bg-muted/30" data-testid="report-filter">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <FunnelIcon size={16} weight="bold" />
+          <span className="font-mono text-[10px] uppercase tracking-[0.2em]">Filter Periode</span>
+        </div>
+        <Input
+          data-testid="filter-periode"
+          type="month"
+          value={periode}
+          onChange={(e) => setPeriode(e.target.value)}
+          className="rounded-sm w-auto"
+        />
+        {periode ? (
+          <Button data-testid="clear-filter" variant="ghost" size="sm" className="rounded-sm text-muted-foreground hover:text-accent" onClick={() => setPeriode("")}>
+            <XIcon size={14} weight="bold" className="mr-1" /> Semua Periode
+          </Button>
+        ) : (
+          <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-primary">Menampilkan: Semua Periode</span>
+        )}
+        {periode && <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-primary">Menampilkan: {periodeLabel()}</span>}
+      </div>
+
       {loading && <p className="font-mono text-xs text-muted-foreground">// Memuat laporan…</p>}
-      {!loading && reports.length === 0 && <p className="font-mono text-xs text-muted-foreground">// Belum ada unit terdaftar</p>}
+      {!loading && reports.length === 0 && <p className="font-mono text-xs text-muted-foreground">// Tidak ada data untuk periode ini</p>}
 
       <div className="space-y-6" data-testid="reports-list">
         {reports.map((r) => (

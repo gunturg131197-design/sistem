@@ -48,19 +48,34 @@ function newDoc() {
 }
 
 // Judul dokumen di dalam area aman (di bawah kop)
-function drawTitle(doc, title, subtitle) {
+function drawTitle(doc, title, meta = {}) {
+  const { subtitle, nomor, periodeLabel } = meta;
+  let y = MARGIN_TOP;
   doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
-  doc.text(title, MARGIN_X, MARGIN_TOP);
-  if (subtitle) {
+  doc.text(title, MARGIN_X, y);
+  y += 6;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(60, 60, 60);
+  if (nomor) {
+    doc.setFont("helvetica", "bold");
+    doc.text(`Nomor: ${nomor}`, MARGIN_X, y);
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(90, 90, 90);
-    doc.text(subtitle, MARGIN_X, MARGIN_TOP + 5.5);
+    y += 5;
+  }
+  if (periodeLabel) {
+    doc.text(`Periode: ${periodeLabel}`, MARGIN_X, y);
+    y += 5;
+  }
+  if (subtitle) {
+    doc.setTextColor(110, 110, 110);
+    doc.text(subtitle, MARGIN_X, y);
+    y += 5;
   }
   doc.setTextColor(0, 0, 0);
-  return MARGIN_TOP + (subtitle ? 10 : 5);
+  return y;
 }
 
 const baseTableOpts = (doc) => ({
@@ -95,9 +110,13 @@ function sectionTitle(doc, y, text) {
 }
 
 // Tabel generik dengan kop
-export function exportToPDF({ title, columns, rows, filename }) {
+export function exportToPDF({ title, columns, rows, filename, nomor, periodeLabel }) {
   const doc = newDoc();
-  const startY = drawTitle(doc, title, `Digenerate: ${new Date().toLocaleString("id-ID")}`);
+  const startY = drawTitle(doc, title, {
+    nomor,
+    periodeLabel,
+    subtitle: `Digenerate: ${new Date().toLocaleString("id-ID")}`,
+  });
   autoTable(doc, {
     head: [columns],
     body: rows,
@@ -108,9 +127,13 @@ export function exportToPDF({ title, columns, rows, filename }) {
 }
 
 // Laporan lengkap satu unit
-export function exportUnitReportPDF(report, filename) {
+export function exportUnitReportPDF(report, filename, meta = {}) {
   const doc = newDoc();
-  let y = drawTitle(doc, `Laporan Unit — ${report.unit_label}`, `Serial: ${report.serial_number || "-"}   |   Digenerate: ${new Date().toLocaleString("id-ID")}`);
+  let y = drawTitle(doc, `Laporan Unit — ${report.unit_label}`, {
+    nomor: meta.nomor,
+    periodeLabel: meta.periodeLabel,
+    subtitle: `Serial: ${report.serial_number || "-"}   |   Digenerate: ${new Date().toLocaleString("id-ID")}`,
+  });
 
   // Ringkasan
   const summary = [

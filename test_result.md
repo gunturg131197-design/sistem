@@ -152,6 +152,34 @@ backend:
         -working: true
         -agent: "testing"
         -comment: "✅ TESTED & VERIFIED: GET /api/reports/units berfungsi sempurna. Agregasi data benar: total_cars=8 (5+3), hm_awal=100 (min), hm_akhir=118 (max), total_hm=18.0 (10+8), total_gaji=400000, total_gaji_bersih=300000, total_sparepart=1300000. Operators list berisi semua operator yang bekerja pada unit. RBAC berfungsi: operator hanya melihat unit miliknya."
+  - task: "Automatic report numbering"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "POST /api/reports/number menerima {month, year} dan mengembalikan nomor laporan otomatis berformat LP/TTP/{seq}/{romawi bulan}/{tahun}. Counter berurutan dimulai dari 200."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ TESTED & VERIFIED: POST /api/reports/number berfungsi sempurna. Format nomor benar: LP/TTP/{seq}/{roman}/{year}. Seq dimulai dari 200 dan increment dengan benar (200→201). Roman numerals benar: VIII untuk bulan 8, III untuk bulan 3, XII untuk bulan 12. Counter persistent di MongoDB (app_counters collection)."
+  - task: "Period filtering for reports"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "GET /api/reports/units?periode=YYYY-MM memfilter operations (tanggal), spareparts (tanggal), dan payroll (periode) sesuai periode yang diberikan. Tanpa parameter periode menampilkan semua data."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ TESTED & VERIFIED: GET /api/reports/units?periode=YYYY-MM berfungsi sempurna. Filter periode 2025-07 menampilkan data seed dengan benar: total_cars=5, total_hm=10, total_gaji=500000, total_gaji_bersih=400000, total_sparepart=1300000. Periode kosong (2025-06) menampilkan semua agregasi=0. Tanpa parameter periode menampilkan semua data (all-time >= filtered). Filter operations/spareparts by tanggal prefix, payroll by periode exact match."
 
 frontend:
   - task: "Sparepart multi-item form + Rupiah"
@@ -190,8 +218,8 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.1"
-  test_sequence: 2
+  version: "1.2"
+  test_sequence: 3
   run_ui: false
 
 test_plan:
@@ -224,3 +252,35 @@ agent_communication:
       4. ✅ RBAC: Operator (budi) tidak bisa POST /api/spareparts & /api/payroll (403 Forbidden). Operator hanya melihat unit miliknya di reports.
       
       Semua backend API berfungsi dengan sempurna. Tidak ada bug atau masalah yang ditemukan.
+
+    -agent: "main"
+    -message: |
+      RETEST BACKEND untuk 2 fitur baru pada laporan (login admin/admin123):
+      1) POST /api/reports/number body {"month":8,"year":2026} → verifikasi field "nomor" berformat "LP/TTP/{seq}/VIII/2026", "seq" integer. Panggil 2x berturut → seq harus naik (mis. 200 lalu 201). Coba month lain (mis. 3) → romawi harus "III".
+      2) GET /api/reports/units?periode=2025-07 → hanya menghitung operations/spareparts dengan tanggal berawalan 2025-07 & payroll periode 2025-07. Bandingkan dengan GET /api/reports/units tanpa periode (semua). Untuk periode yang tidak ada data (mis. 2020-01) → agregasi 0 untuk unit tsb.
+      Data seed sudah ada: unit CAT 320D (unit_seed_01), ops tanggal 2025-07-02, payroll periode 2025-07, sparepart tanggal 2025-07-01. Jadi periode=2025-07 harus menampilkan angka, periode=2025-06 harus 0.
+    -agent: "testing"
+    -message: |
+      ✅ BACKEND TESTING COMPLETE - ALL NEW FEATURES PASSED (2/2)
+      
+      Tested 2 new backend features for reports with comprehensive test suite (/app/backend_test_new_features.py):
+      
+      1. ✅ AUTOMATIC REPORT NUMBERING (POST /api/reports/number):
+         - Format nomor benar: LP/TTP/{seq}/{roman}/{year}
+         - Seq dimulai dari 200 dan increment dengan benar (200→201→202→203)
+         - Roman numerals benar: VIII untuk bulan 8, III untuk bulan 3, XII untuk bulan 12
+         - Counter persistent di MongoDB (app_counters collection)
+         - Semua test cases passed: month 8/2026, sequential calls, month 3/2026, month 12/2025
+      
+      2. ✅ PERIOD FILTERING (GET /api/reports/units?periode=YYYY-MM):
+         - Filter periode 2025-07 menampilkan data seed dengan benar:
+           * total_cars=5 (expected 5) ✓
+           * total_hm=10 (expected 10) ✓
+           * total_gaji=500000 (expected 500000) ✓
+           * total_gaji_bersih=400000 (expected 400000) ✓
+           * total_sparepart=1300000 (expected 1300000) ✓
+         - Periode kosong (2025-06) menampilkan semua agregasi=0 ✓
+         - Tanpa parameter periode menampilkan semua data (all-time >= filtered) ✓
+         - Filter logic benar: operations/spareparts by tanggal prefix, payroll by periode exact match
+      
+      Semua backend API untuk fitur baru berfungsi dengan sempurna. Tidak ada bug atau masalah yang ditemukan.
