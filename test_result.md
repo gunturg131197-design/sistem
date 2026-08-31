@@ -180,6 +180,20 @@ backend:
         -working: true
         -agent: "testing"
         -comment: "✅ TESTED & VERIFIED: GET /api/reports/units?periode=YYYY-MM berfungsi sempurna. Filter periode 2025-07 menampilkan data seed dengan benar: total_cars=5, total_hm=10, total_gaji=500000, total_gaji_bersih=400000, total_sparepart=1300000. Periode kosong (2025-06) menampilkan semua agregasi=0. Tanpa parameter periode menampilkan semua data (all-time >= filtered). Filter operations/spareparts by tanggal prefix, payroll by periode exact match."
+  - task: "Report archive (arsip nomor laporan)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "POST /api/reports/number menerima {month, year, jenis, unit_label, periode_label} dan menyimpan ke arsip. GET /api/reports/archive mengembalikan list arsip terurut seq desc."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ TESTED & VERIFIED: POST /api/reports/number dengan jenis, unit_label, periode_label berfungsi sempurna. Response berisi nomor (format LP/TTP/{seq}/{roman}/{year}) dan id. Berhasil menerbitkan 3 nomor: jenis 'unit' (Agustus 2026), jenis 'semua' (Semua Periode), jenis 'unit' (September 2026). GET /api/reports/archive mengembalikan array terurut seq DESCENDING (202→201→200). Semua field lengkap: nomor, seq, jenis, unit_label, periode_label, issued_by='Admin Test', created_at. Jenis 'unit' punya unit_label terisi, jenis 'semua' kosong. Auth protection berfungsi: tanpa cookie → 401."
 
 frontend:
   - task: "Sparepart multi-item form + Rupiah"
@@ -284,3 +298,39 @@ agent_communication:
          - Filter logic benar: operations/spareparts by tanggal prefix, payroll by periode exact match
       
       Semua backend API untuk fitur baru berfungsi dengan sempurna. Tidak ada bug atau masalah yang ditemukan.
+
+    -agent: "main"
+    -message: |
+      RETEST BACKEND fitur ARSIP NOMOR (login admin/admin123):
+      1) POST /api/reports/number body {"month":8,"year":2026,"jenis":"unit","unit_label":"CAT 320D - TTP-01","periode_label":"Agustus 2026"} → sukses & mengembalikan nomor + id.
+      2) GET /api/reports/archive → harus mengembalikan list berisi entri yang baru diterbitkan, terurut seq desc, tiap item punya: nomor, seq, jenis, unit_label, periode_label, issued_by (="Admin Test"), created_at. Terbitkan 2-3 nomor (campur jenis "unit" & "semua") lalu pastikan semuanya muncul di arsip dengan urutan seq menurun.
+      3) Pastikan GET /api/reports/archive butuh auth (tanpa cookie → 401).
+    -agent: "testing"
+    -message: |
+      ✅ BACKEND TESTING COMPLETE - ARSIP NOMOR LAPORAN FEATURE PASSED (3/3)
+      
+      Tested ARSIP NOMOR LAPORAN backend feature with comprehensive test suite (/app/backend_test_arsip.py):
+      
+      1. ✅ POST /api/reports/number:
+         - Accepts body with month, year, jenis, unit_label, periode_label
+         - Returns correct response with "nomor" (format LP/TTP/{seq}/{roman}/{year}) and "id"
+         - Successfully issued 3 numbers:
+           (a) jenis "unit": LP/TTP/200/VIII/2026 (Agustus 2026, CAT 320D - TTP-01)
+           (b) jenis "semua": LP/TTP/201/VIII/2026 (Semua Periode)
+           (c) jenis "unit": LP/TTP/202/IX/2026 (September 2026, CAT 320D - TTP-01)
+         - Seq increments correctly: 200 → 201 → 202
+         - Roman numerals correct: VIII (month 8), IX (month 9)
+      
+      2. ✅ GET /api/reports/archive:
+         - Returns 200 with array list (3 entries)
+         - Contains all 3 newly issued entries
+         - Sorted by seq DESCENDING (newest first): 202 → 201 → 200
+         - All required fields present: nomor, seq, jenis, unit_label, periode_label, issued_by, created_at
+         - issued_by = "Admin Test" (correct admin user name)
+         - jenis "unit" entries have unit_label filled ("CAT 320D - TTP-01")
+         - jenis "semua" entry has empty unit_label (as expected)
+      
+      3. ✅ AUTH PROTECTION:
+         - GET /api/reports/archive without cookie/authorization → 401 Unauthorized
+      
+      All backend API for ARSIP NOMOR LAPORAN feature working perfectly. No bugs or issues found.

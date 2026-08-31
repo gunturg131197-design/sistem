@@ -3,7 +3,8 @@ import api from "@/lib/api";
 import { PageHeader, formatIDR } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FileXlsIcon, FilePdfIcon, TruckIcon, ClockIcon, WrenchIcon, MoneyIcon, FunnelIcon, XIcon } from "@phosphor-icons/react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { FileXlsIcon, FilePdfIcon, TruckIcon, ClockIcon, WrenchIcon, MoneyIcon, FunnelIcon, XIcon, ArchiveIcon } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { exportToExcelMultiSheet, exportToPDF, exportUnitReportPDF } from "@/lib/exporters";
 
@@ -13,6 +14,15 @@ export default function ReportsPage() {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [periode, setPeriode] = useState(""); // "" = semua, atau "YYYY-MM"
+  const [archive, setArchive] = useState([]);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+
+  const loadArchive = async () => {
+    try {
+      const { data } = await api.get("/reports/archive");
+      setArchive(data);
+    } catch { toast.error("Gagal memuat arsip nomor"); }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -22,7 +32,7 @@ export default function ReportsPage() {
     } catch { toast.error("Gagal memuat laporan"); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [periode]);
+  useEffect(() => { load(); }, [periode]);
 
   const periodeLabel = () => {
     if (!periode) return "Semua Periode";
@@ -31,12 +41,18 @@ export default function ReportsPage() {
   };
 
   // Terbitkan nomor laporan otomatis dari backend
-  const issueNomor = async () => {
+  const issueNomor = async (ctx = {}) => {
     let month, year;
     if (periode) { const [y, m] = periode.split("-"); month = Number(m); year = Number(y); }
     else { const d = new Date(); month = d.getMonth() + 1; year = d.getFullYear(); }
     try {
-      const { data } = await api.post("/reports/number", { month, year });
+      const { data } = await api.post("/reports/number", {
+        month, year,
+        jenis: ctx.jenis || "semua",
+        unit_label: ctx.unit_label || "",
+        periode_label: periodeLabel(),
+      });
+      loadArchive();
       return data.nomor;
     } catch { toast.error("Gagal menerbitkan nomor laporan"); return ""; }
   };
@@ -57,7 +73,7 @@ export default function ReportsPage() {
   }));
 
   const downloadAllExcel = async () => {
-    const nomor = await issueNomor();
+    const nomor = await issueNomor({ jenis: "semua" });
     exportToExcelMultiSheet([
       { name: "Info", rows: [{ "Nomor Laporan": nomor, Periode: periodeLabel(), Digenerate: new Date().toLocaleString("id-ID") }] },
       { name: "Rekap Unit", rows: summaryRows },
@@ -66,7 +82,7 @@ export default function ReportsPage() {
   };
 
   const downloadAllPDF = async () => {
-    const nomor = await issueNomor();
+    const nomor = await issueNomor({ jenis: "semua" });
     exportToPDF({
       title: "Laporan Rekap Semua Unit",
       nomor,
@@ -83,7 +99,7 @@ export default function ReportsPage() {
 
   // ---- Per unit ----
   const downloadUnitExcel = async (r) => {
-    const nomor = await issueNomor();
+    const nomor = await issueNomor({ jenis: "unit", unit_label: r.unit_label });
     const fname = `laporan-${r.unit_name}-${r.nomor_lambung}`.replace(/\s+/g, "_");
     exportToExcelMultiSheet([
       {
@@ -132,7 +148,7 @@ export default function ReportsPage() {
   };
 
   const downloadUnitPDF = async (r) => {
-    const nomor = await issueNomor();
+    const nomor = await issueNomor({ jenis: "unit", unit_label: r.unit_label });
     const fname = `laporan-${r.unit_name}-${r.nomor_lambung}`.replace(/\s+/g, "_");
     exportUnitReportPDF(r, fname, { nomor, periodeLabel: periodeLabel() });
     toast.success(`PDF ${r.unit_name} diunduh · ${nomor}`);
@@ -146,6 +162,50 @@ export default function ReportsPage() {
         description="Rekap lengkap tiap unit: cars baru, operator, gaji operator, HM awal/akhir, total HM, dan penggantian sparepart. Setiap unduhan otomatis diberi nomor laporan resmi."
         actions={
           <>
+            <Dialog open={archiveOpen} onOpenChange={(v) => { setArchiveOpen(v); if (v) loadArchive(); }}>
+              <DialogTrigger asChild>
+                <Button data-testid="open-archive" variant="outline" className="rounded-sm border-border hover:border-primary hover:text-primary">
+                  <ArchiveIcon size={16} weight="bold" className="mr-2" /> Arsip Nomor
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="rounded-sm border-border bg-card max-w-3xl max-h-[85vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle className="font-display font-black tracking-tighter text-2xl">Arsip Nomor Laporan</DialogTitle>
+                </DialogHeader>
+                <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground -mt-2">Semua nomor laporan yang pernah diterbitkan · {archive.length} nomor</p>
+                <div className="border border-border overflow-x-auto mt-2" data-testid="archive-table">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/50">
+                      <tr className="text-left font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+                        <th className="p-2.5">Nomor</th>
+                        <th className="p-2.5">Jenis</th>
+                        <th className="p-2.5">Unit</th>
+                        <th className="p-2.5">Periode</th>
+                        <th className="p-2.5">Diterbitkan</th>
+                        <th className="p-2.5">Oleh</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {archive.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-muted-foreground text-xs font-mono">// Belum ada nomor diterbitkan</td></tr>}
+                      {archive.map((a) => (
+                        <tr key={a.id} className="border-t border-border hover:bg-secondary/30">
+                          <td className="p-2.5 font-mono text-primary font-semibold whitespace-nowrap">{a.nomor}</td>
+                          <td className="p-2.5">
+                            <span className={`font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 border ${a.jenis === "unit" ? "border-primary/50 text-primary" : "border-border text-muted-foreground"}`}>
+                              {a.jenis === "unit" ? "Per Unit" : "Semua"}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-muted-foreground">{a.unit_label || "—"}</td>
+                          <td className="p-2.5 font-mono text-xs">{a.periode_label || "—"}</td>
+                          <td className="p-2.5 font-mono text-xs text-muted-foreground whitespace-nowrap">{a.created_at ? new Date(a.created_at).toLocaleString("id-ID") : "—"}</td>
+                          <td className="p-2.5 text-xs">{a.issued_by || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </DialogContent>
+            </Dialog>
             <Button data-testid="export-excel-all" variant="outline" className="rounded-sm border-border hover:border-primary hover:text-primary" onClick={downloadAllExcel}>
               <FileXlsIcon size={16} weight="bold" className="mr-2" /> Excel Semua
             </Button>

@@ -36,6 +36,8 @@ Aplikasi sistem pelaporan untuk alat berat excavator. Fields: unit excavator, no
 - Semua nilai keuangan format Rupiah (live CurrencyInput di common.jsx)
 - Payroll per-jam: pilih unit, jam kerja auto dari Ops (HM akhir-awal), jam dibayar & sisa jam belum dibayar (GET /api/payroll/hours), tarif/jam → gaji = jam dibayar × tarif; 1 payroll = 1 unit
 - Halaman Laporan per Unit (GET /api/reports/units) + download per unit & semua (PDF + Excel multi-sheet)
+- Filter periode (bulan) di Laporan; Nomor laporan otomatis LP/TTP/{seq}/{romawi}/{tahun} (POST /api/reports/number, counter app_counters mulai 200)
+- Arsip Nomor Laporan: setiap nomor terbit disimpan (db.report_archive) & bisa ditelusuri via GET /api/reports/archive + dialog "Arsip Nomor" di halaman Laporan
 - Semua PDF memakai kop surat TRIRARA TUNGGAL PUTRA (portrait A4, header+footer tiap halaman) via src/lib/letterhead.js + exporters.js
 
 ## Backlog (P1)

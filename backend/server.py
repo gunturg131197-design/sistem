@@ -890,11 +890,15 @@ REPORT_NO_BASE = 199  # nomor urut pertama yang diterbitkan = 200
 class ReportNumberRequest(BaseModel):
     month: int
     year: int
+    jenis: Optional[str] = "semua"      # "unit" | "semua"
+    unit_label: Optional[str] = ""
+    periode_label: Optional[str] = ""
 
 
 @api_router.post("/reports/number")
 async def issue_report_number(body: ReportNumberRequest, user: User = Depends(get_current_user)):
-    """Terbitkan nomor laporan berurutan otomatis: LP/TTP/{seq}/{romawi bulan}/{tahun}."""
+    """Terbitkan nomor laporan berurutan otomatis: LP/TTP/{seq}/{romawi bulan}/{tahun}
+    dan simpan ke arsip agar bisa ditelusuri kembali."""
     month = body.month if 1 <= body.month <= 12 else datetime.now(timezone.utc).month
     year = body.year or datetime.now(timezone.utc).year
     doc = await db.app_counters.find_one_and_update(
@@ -905,7 +909,29 @@ async def issue_report_number(body: ReportNumberRequest, user: User = Depends(ge
     )
     seq = REPORT_NO_BASE + int(doc.get("value", 1))
     nomor = f"LP/TTP/{seq}/{ROMAN_MONTHS[month]}/{year}"
-    return {"nomor": nomor, "seq": seq, "month": month, "year": year}
+
+    archive = {
+        "id": str(uuid.uuid4()),
+        "nomor": nomor,
+        "seq": seq,
+        "month": month,
+        "year": year,
+        "jenis": body.jenis or "semua",
+        "unit_label": body.unit_label or "",
+        "periode_label": body.periode_label or "",
+        "issued_by": user.name,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.report_archive.insert_one(archive)
+    archive.pop("_id", None)
+    return {"nomor": nomor, "seq": seq, "month": month, "year": year, "id": archive["id"]}
+
+
+@api_router.get("/reports/archive")
+async def list_report_archive(user: User = Depends(get_current_user)):
+    """Daftar semua nomor laporan yang pernah diterbitkan (terbaru dulu)."""
+    docs = await db.report_archive.find({}, {"_id": 0}).sort("seq", -1).to_list(5000)
+    return docs
 
 
 @api_router.get("/reports/units")
