@@ -1,8 +1,13 @@
 node_modules/
 build/
-.env
-.env.*
-*.log
 .git/
+*.log
 coverage/
 .DS_Store
+
+# Abaikan env dev/preview, TAPI biarkan .env.production ikut ter-build
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test

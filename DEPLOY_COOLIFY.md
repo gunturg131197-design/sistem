@@ -1,70 +1,87 @@
-# Deploy EXCAVA.OPS di Coolify v4 (>= 4.3.14)
+# Deploy EXCAVA.OPS di Coolify v4 (>= 4.3.14) — Dua Subdomain
 
-Aplikasi ini di-deploy sebagai **Docker Compose** (3 service: MongoDB, Backend FastAPI, Frontend React+nginx).
-Hanya **frontend** yang diekspos ke domain publik; nginx di frontend otomatis mem-proxy `/api` ke backend,
-sehingga login (cookie) berjalan aman dalam satu domain.
+Arsitektur: **Frontend** dan **Backend** di-deploy sebagai **dua Application terpisah** (berbasis Dockerfile),
+plus **MongoDB** (disarankan MongoDB Atlas / atau container Mongo tersendiri).
+
+```
+Frontend : https://sistem.domainanda.com        (React + nginx, port 80)
+Backend  : https://api.sistem.domainanda.com     (FastAPI/uvicorn, port 8000)
+Database : MongoDB Atlas (mongodb+srv://...)      atau Mongo container
+```
+
+> Keduanya berada di bawah satu domain induk (`domainanda.com`) sehingga cookie login
+> (`SameSite=None; Secure`) tetap valid antar-subdomain. HTTPS wajib (Coolify menyediakan via Let's Encrypt).
 
 ---
 
-## Langkah Deploy
+## A. Deploy BACKEND (FastAPI)
 
-### 1. Siapkan kode
-Pastikan seluruh repo (folder `backend/`, `frontend/`, dan `docker-compose.yml`) sudah ter-push ke
-Git (GitHub/GitLab) yang bisa diakses Coolify. Gunakan fitur **"Save to Github"** di Emergent bila perlu.
+1. Coolify → **+ New Resource → Application → Dockerfile / Git**.
+2. Pilih repo Anda.
+3. **Base Directory**: arahkan ke folder backend, mis. `/sistem-ttp-cpanel/backend`
+   (sesuaikan dengan struktur repo GitHub Anda). **Dockerfile**: `/Dockerfile` (relatif thd Base Directory).
+4. **Port**: `8000` (sesuai `EXPOSE 8000` di Dockerfile).
+5. **Domain**: `https://api.sistem.domainanda.com`.
+6. **Environment Variables** (JANGAN commit ke GitHub):
+   ```
+   MONGO_URL=mongodb+srv://USERNAME:PASSWORD@CLUSTER.mongodb.net/?retryWrites=true&w=majority
+   DB_NAME=ttp_ops
+   CORS_ORIGINS=https://sistem.domainanda.com
 
-### 2. Buat Resource di Coolify
-1. Buka Coolify -> pilih Project/Server -> **+ New Resource**.
-2. Pilih **Docker Compose** (Application) berbasis Git repository.
-3. Arahkan ke repo kamu dan branch yang benar.
-4. Coolify akan mendeteksi `docker-compose.yml` di root repo. Jika file compose ada di subfolder,
-   set **Base Directory** / **Docker Compose Location** sesuai lokasinya (di sini: root `/`).
+   # Bootstrap admin pertama (DB kosong) — GANTI passwordnya!
+   ADMIN_USERNAME=admin
+   ADMIN_PASSWORD=ganti_password_kuat
+   ADMIN_NAME=Administrator
+   # Opsional: email Google yang otomatis jadi admin (pisah koma)
+   ADMIN_EMAILS=
+   ```
+   > **PENTING**: `CORS_ORIGINS` harus **persis** origin frontend (bukan `*`), karena login memakai
+   > cookie berkredensial. Kalau salah, login akan gagal (CORS blok).
+7. **Start Command**: kosongkan (CMD sudah ada di Dockerfile). Jangan pakai `npm start`/lainnya.
+8. Deploy.
 
-### 3. Set Environment Variables
-Di tab **Environment Variables**, isi minimal (lihat `.env.example`):
-
-```
-DB_NAME=excava_ops
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=ganti_dengan_password_kuat
-ADMIN_NAME=Administrator
-```
-
-> `ADMIN_USERNAME` + `ADMIN_PASSWORD` dipakai untuk **membuat admin pertama otomatis** saat database
-> masih kosong. Setelah admin ada, Anda bisa menambah operator/admin lain dari menu **Users** di aplikasi.
-
-### 4. Atur Domain
-1. Di daftar service, pilih service **frontend**.
-2. Set **Domain** (FQDN) kamu, mis. `https://excava.domainku.com`.
-3. Pastikan **Port** yang di-expose = **80** (nginx). Coolify akan menangani HTTPS (Let's Encrypt) otomatis.
-4. Service `backend` dan `mongo` **TIDAK** perlu domain (internal saja).
-
-### 5. Deploy
-Klik **Deploy**. Coolify akan build image backend & frontend lalu menjalankan ketiga service.
-
-### 6. Login pertama
-Buka domain kamu -> halaman **/login** -> tab **Username/Password** -> masuk dengan
-`ADMIN_USERNAME` / `ADMIN_PASSWORD` yang tadi di-set.
+Cek sehat: buka `https://api.sistem.domainanda.com/docs` → harus muncul Swagger UI.
 
 ---
 
-## Catatan Penting
+## B. Deploy FRONTEND (React + nginx)
 
-- **Persistensi data**: MongoDB memakai named volume `mongo_data`. Jangan hapus volume ini agar data tidak hilang saat re-deploy.
-- **Backend URL**: Tidak perlu di-set. Frontend memakai path relatif `/api` (di-proxy nginx ke backend). Karena itu tidak ada masalah cookie lintas-domain.
-- **CPU tanpa AVX**: `mongo:7` butuh CPU yang mendukung AVX. Bila server VPS lama gagal menjalankan Mongo,
-  ganti baris image di `docker-compose.yml` menjadi `image: mongo:4.4` (masih kompatibel).
-- **Ganti password admin**: Setelah login pertama, buat admin baru berpassword kuat atau ganti password melalui menu Users, lalu hapus/nonaktifkan default bila perlu.
-- **Google OAuth (opsional)**: Login via Google akan menjadikan email di `ADMIN_EMAILS` sebagai admin. Login manual (username/password) tidak butuh ini.
-- **Rebuild frontend**: Bila mengubah kode frontend, Coolify otomatis build ulang saat deploy. Env `REACT_APP_BACKEND_URL` dibiarkan kosong (same-origin).
+1. **Edit `frontend/.env.production`** → ganti nilai `REACT_APP_BACKEND_URL` ke subdomain backend Anda
+   (TANPA `/api` di akhir), lalu commit:
+   ```
+   REACT_APP_BACKEND_URL=https://api.sistem.domainanda.com
+   ```
+   Kode `src/lib/api.js` menambahkan `/api` otomatis → `https://api.sistem.domainanda.com/api`.
+2. Coolify → **+ New Resource → Application → Dockerfile / Git** (repo yang sama).
+3. **Base Directory**: `/sistem-ttp-cpanel/frontend` (sesuaikan repo Anda). **Dockerfile**: `/Dockerfile`.
+4. **Port**: `80`.
+5. **Domain**: `https://sistem.domainanda.com`.
+6. **Start Command**: kosongkan (Dockerfile sudah `CMD ["nginx","-g","daemon off;"]`). Hapus `npm start`.
+7. Deploy.
 
 ---
 
-## Ringkasan Arsitektur
+## C. Login pertama
 
-```
-            (HTTPS, domain kamu)
-Browser  ->  Coolify Traefik  ->  frontend (nginx :80)
-                                     |-- serve React build (static)
-                                     |-- /api/*  ->  backend (FastAPI :8001)
-                                                        |-- mongo (:27017)
-```
+Buka `https://sistem.domainanda.com/login` → tab **Username/Password** →
+masuk dengan `ADMIN_USERNAME` / `ADMIN_PASSWORD` yang di-set di backend.
+Setelah masuk, tambah operator/admin lain dari menu **Users**.
+
+---
+
+## Catatan & Troubleshooting
+
+- **`.env.production` frontend**: nilainya dibaca saat BUILD (`npm run build`). Jika mengubah URL backend,
+  Anda harus **redeploy/rebuild** frontend agar berubah.
+- **Lama muncul `.../api-dev/api`?** Itu karena nilai lama `REACT_APP_BACKEND_URL` mengandung path.
+  Pastikan hanya origin murni: `https://api.sistem.domainanda.com` (tanpa `/api`, tanpa `/api-dev`).
+- **Login gagal / 401 setelah login**: hampir selalu karena `CORS_ORIGINS` di backend tidak sama persis
+  dengan origin frontend, atau salah satu sisi belum HTTPS. Cookie butuh HTTPS (Secure) + origin eksak.
+- **`requirements.txt`**: sudah dibersihkan agar aman di `python:3.11-slim`
+  (menghapus `emergentintegrations` yang tidak ada di PyPI & `jq` yang butuh compiler; menambahkan `httpx`
+  yang dipakai kode). Jangan menambah lagi paket yang butuh kompilasi tanpa menyiapkan build tools.
+- **MongoDB Atlas**: whitelist IP server Coolify Anda (atau `0.0.0.0/0` untuk uji) di Atlas Network Access.
+- **Alternatif Mongo tanpa Atlas**: buat satu lagi resource **Database → MongoDB** di Coolify, lalu pakai
+  connection string internalnya sebagai `MONGO_URL` (mis. `mongodb://user:pass@host:27017`).
+- **Google OAuth (opsional)**: hanya relevan bila memakai login Google; email pada `ADMIN_EMAILS`
+  otomatis menjadi admin. Login manual (username/password) tidak membutuhkannya.
