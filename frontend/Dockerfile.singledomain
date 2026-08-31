@@ -1,0 +1,29 @@
+# ---- Varian SATU DOMAIN ----
+# Frontend disajikan nginx yang JUGA mem-proxy /api ke backend (satu origin).
+# REACT_APP_BACKEND_URL dikosongkan -> api.js memakai path relatif "/api".
+
+FROM node:20-alpine AS build
+
+WORKDIR /app
+
+COPY package*.json ./
+
+RUN npm install --legacy-peer-deps
+
+COPY . .
+
+# Paksa same-origin: kosongkan REACT_APP_BACKEND_URL (menimpa .env.production).
+# Hasil: API = "/api" (relatif) -> di-proxy nginx ke backend.
+RUN printf 'REACT_APP_BACKEND_URL=\n' > .env.production
+
+RUN npm run build
+
+
+FROM nginx:alpine
+
+COPY --from=build /app/build /usr/share/nginx/html
+COPY nginx.single-domain.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

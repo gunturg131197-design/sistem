@@ -161,6 +161,49 @@ service `mongo` (tanpa urusan jaringan antar-resource). File: `docker-compose.ym
 
 ---
 
+## F. Opsi SATU DOMAIN — compose gabungan, tanpa subdomain backend & tanpa CORS (TERSIMPEL)
+
+Hanya **satu domain** (frontend). nginx frontend otomatis mem-proxy `/api` ke backend internal.
+Tidak perlu subdomain backend, tidak perlu atur CORS, tidak perlu `.env.production`.
+File: `docker-compose.singledomain.yml`, `frontend/Dockerfile.singledomain`,
+`frontend/nginx.single-domain.conf`, `.env.singledomain.example`.
+
+1. Coolify → **+ New Resource → Docker Compose** (repo yang sama).
+   - **Base Directory**: folder berisi `docker-compose.singledomain.yml` (mis. `/sistem-ttp-cpanel`).
+   - **Docker Compose file**: `docker-compose.singledomain.yml` (bila Coolify menanyakan nama file compose).
+2. **Environment Variables** (lihat `.env.singledomain.example`):
+   ```
+   MONGO_ROOT_USERNAME=root
+   MONGO_ROOT_PASSWORD=ganti_password_kuat
+   DB_NAME=ttp_ops
+   ADMIN_USERNAME=admin
+   ADMIN_PASSWORD=ganti_password_kuat
+   ADMIN_NAME=Administrator
+   ```
+   > Tidak perlu `REACT_APP_BACKEND_URL` maupun `CORS_ORIGINS`.
+3. **Domain**: cukup untuk service **frontend** → `https://sistem.domainanda.com`, port **80**.
+   `backend` & `mongo` biarkan **internal** (tanpa domain).
+4. Deploy. Buka domain → `/login` → masuk dengan admin dari env.
+
+> Cara kerja: browser hanya bicara ke satu origin. Request ke `/api/...` diteruskan nginx ke
+> `backend:8000` di jaringan internal compose. Cookie login jadi same-origin (paling aman & tanpa ribet).
+> `frontend/Dockerfile.singledomain` sengaja mengosongkan `REACT_APP_BACKEND_URL` saat build sehingga
+> `api.js` memakai path relatif `/api`.
+
+---
+
+## Ringkasan pilihan deployment
+
+| Opsi | Domain | Mongo | Cocok bila |
+|------|--------|-------|------------|
+| A/B/C + 2 app terpisah | 2 subdomain (frontend + api) | Coolify DB / container / Atlas | Ingin frontend & backend benar-benar terpisah |
+| **E** (compose gabungan) | 2 subdomain | container internal `mongo` | Mau satu resource, tetap pakai subdomain api |
+| **F** (compose satu domain) | **1 domain saja** | container internal `mongo` | **Paling sederhana** \u2014 tanpa CORS/subdomain |
+
+> Pilih **satu** opsi saja. Untuk kebanyakan kasus, **Opsi F** paling mudah dijalankan.
+
+---
+
 ## Catatan & Troubleshooting
 
 - **`.env.production` frontend**: nilainya dibaca saat BUILD (`npm run build`). Jika mengubah URL backend,

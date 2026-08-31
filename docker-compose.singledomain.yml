@@ -1,0 +1,59 @@
+# ============================================================
+# EXCAVA.OPS - Compose GABUNGAN varian SATU DOMAIN untuk Coolify v4
+# 3 service: mongo + backend + frontend.
+# HANYA "frontend" yang punya domain publik. nginx frontend mem-proxy /api
+# ke backend (internal). Tidak perlu subdomain backend & tidak perlu CORS.
+# ------------------------------------------------------------
+# Domain:
+#   - frontend -> https://sistem.domainanda.com   (port 80)  <-- SATU-SATUNYA domain
+#   - backend  -> internal (port 8000, tanpa domain)
+#   - mongo    -> internal (tanpa domain)
+# ============================================================
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USERNAME:-root}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:-ubah_password_ini}
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      - MONGO_URL=mongodb://${MONGO_ROOT_USERNAME:-root}:${MONGO_ROOT_PASSWORD:-ubah_password_ini}@mongo:27017/?authSource=admin
+      - DB_NAME=${DB_NAME:-ttp_ops}
+      # Same-origin -> CORS tidak dipakai; biarkan default aman.
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # Admin pertama otomatis (DB kosong) — GANTI password!
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - ADMIN_NAME=${ADMIN_NAME:-Administrator}
+      - ADMIN_EMAILS=${ADMIN_EMAILS:-}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    expose:
+      - "8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.singledomain
+    restart: unless-stopped
+    depends_on:
+      - backend
+    expose:
+      - "80"
+
+volumes:
+  mongo_data:
