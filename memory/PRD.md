@@ -31,6 +31,13 @@ Aplikasi sistem pelaporan untuk alat berat excavator. Fields: unit excavator, no
 - Users/roles management (admin only)
 - Industrial yellow/black theme, grid-bg, sharp corners, Phosphor icons, sonner toasts
 
+## Update (2025-07)
+- Nota Sparepart multi-item (nama, qty, harga satuan, total/item + total nota) + kolom HM service (info servis kelipatan 250 jam)
+- Semua nilai keuangan format Rupiah (live CurrencyInput di common.jsx)
+- Payroll per-jam: pilih unit, jam kerja auto dari Ops (HM akhir-awal), jam dibayar & sisa jam belum dibayar (GET /api/payroll/hours), tarif/jam → gaji = jam dibayar × tarif; 1 payroll = 1 unit
+- Halaman Laporan per Unit (GET /api/reports/units) + download per unit & semua (PDF + Excel multi-sheet)
+- Semua PDF memakai kop surat TRIRARA TUNGGAL PUTRA (portrait A4, header+footer tiap halaman) via src/lib/letterhead.js + exporters.js
+
 ## Backlog (P1)
 - Photo attachment on nota sparepart
 - Filter/search on tables
