@@ -69,6 +69,61 @@ Setelah masuk, tambah operator/admin lain dari menu **Users**.
 
 ---
 
+## D. Opsi MongoDB (pilih salah satu)
+
+### Opsi A — MongoDB bawaan Coolify (paling mudah, DISARANKAN)
+1. Coolify → Project/Environment yang sama → **+ New Resource → Database → MongoDB**.
+2. Set versi (mis. 7) & password root. Deploy.
+3. Setelah jalan, buka detail database → salin **Connection String / Internal URL**.
+   Bentuknya kira-kira:
+   ```
+   mongodb://root:PASSWORD@<nama-internal-mongo>:27017/?authSource=admin
+   ```
+   > Coolify membuat database ini bisa dihubungi resource lain **dalam Project & Environment yang sama**
+   > melalui hostname internalnya. Pastikan backend berada di Project/Environment yang sama.
+4. Di **Backend → Environment Variables**, isi:
+   ```
+   MONGO_URL=mongodb://root:PASSWORD@<nama-internal-mongo>:27017/?authSource=admin
+   DB_NAME=ttp_ops
+   ```
+5. Redeploy backend.
+
+### Opsi B — Container MongoDB sendiri (Docker Compose)
+File tersedia: `mongodb/docker-compose.yml` (+ `mongodb/.env.example`).
+
+1. Coolify → **+ New Resource → Docker Compose** (repo yang sama).
+2. **Base Directory**: `/sistem-ttp-cpanel/mongodb` (sesuaikan repo Anda) — agar Coolify memakai
+   `docker-compose.yml` di folder itu.
+3. **Environment Variables** (lihat `mongodb/.env.example`):
+   ```
+   MONGO_ROOT_USERNAME=root
+   MONGO_ROOT_PASSWORD=ganti_password_kuat
+   ```
+4. **Penting — jaringan**: agar backend (app terpisah) bisa menghubungi Mongo ini, pastikan keduanya
+   berada di Project + Environment yang sama, dan aktifkan **"Connect to Predefined Network"** pada
+   kedua resource (Settings resource). Lalu catat **nama service/container Mongo** yang ditampilkan Coolify.
+5. Deploy. Data tersimpan di volume `mongo_data` (persisten).
+6. Di **Backend → Environment Variables**, isi `MONGO_URL` memakai nama host Mongo tsb + authSource:
+   ```
+   MONGO_URL=mongodb://root:ganti_password_kuat@<nama-host-mongo-coolify>:27017/?authSource=admin
+   DB_NAME=ttp_ops
+   ```
+   > `authSource=admin` wajib karena user dibuat sebagai root di database `admin`.
+   > `DB_NAME` boleh apa saja (mis. `ttp_ops`); backend memakai `client[DB_NAME]`.
+
+> **Tips paling anti-ribet (alternatif):** gabungkan Mongo + Backend dalam SATU resource Docker Compose,
+> sehingga backend cukup memakai `MONGO_URL=mongodb://root:pass@mongo:27017/?authSource=admin`
+> (nama service `mongo` langsung resolvable, tanpa urusan jaringan antar-resource). Minta saya bila mau versi ini.
+
+### Opsi C — MongoDB Atlas (cloud, tanpa container)
+```
+MONGO_URL=mongodb+srv://USER:PASS@CLUSTER.mongodb.net/?retryWrites=true&w=majority
+DB_NAME=ttp_ops
+```
+Whitelist IP server Coolify (atau `0.0.0.0/0` untuk uji) di Atlas → Network Access.
+
+---
+
 ## Catatan & Troubleshooting
 
 - **`.env.production` frontend**: nilainya dibaca saat BUILD (`npm run build`). Jika mengubah URL backend,

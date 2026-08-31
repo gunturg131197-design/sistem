@@ -1,0 +1,30 @@
+# ============================================================
+# EXCAVA.OPS - MongoDB standalone untuk Coolify (Opsi B)
+# Deploy sebagai resource "Docker Compose" tersendiri di Coolify.
+# Backend (app terpisah) terhubung ke sini lewat jaringan Docker Coolify.
+# ============================================================
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      # Kredensial root Mongo (di-set via Environment Variables di Coolify).
+      # JANGAN pakai default di produksi — ganti password yang kuat!
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USERNAME:-root}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:-ubah_password_ini}
+    volumes:
+      # Data persisten — jangan hapus volume ini agar data tidak hilang.
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # (Opsional) Buka port agar bisa diakses dari luar (mis. MongoDB Compass).
+    # HATI-HATI: mengekspos DB ke internet berisiko. Lebih aman biarkan internal.
+    # ports:
+    #   - "27017:27017"
+
+volumes:
+  mongo_data:
