@@ -40,8 +40,9 @@ def normalize_username(u: str) -> str:
     return (u or "").strip().lower()
 
 
-# Admin allowlist (owner)
-ADMIN_EMAILS = {"shanchidean@gmail.com"}
+# Admin allowlist (owner) — bisa ditambah via env ADMIN_EMAILS (dipisah koma)
+_env_admin_emails = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
+ADMIN_EMAILS = {"shanchidean@gmail.com"} | _env_admin_emails
 
 
 # ---------- Models ----------
@@ -1011,6 +1012,38 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+@app.on_event("startup")
+async def _bootstrap_admin():
+    """Buat admin awal otomatis bila ADMIN_USERNAME & ADMIN_PASSWORD di-set dan belum ada admin.
+    Berguna untuk deployment baru (mis. Coolify) dengan database kosong."""
+    admin_username = os.environ.get("ADMIN_USERNAME")
+    admin_password = os.environ.get("ADMIN_PASSWORD")
+    if not admin_username or not admin_password:
+        return
+    try:
+        username = normalize_username(admin_username)
+        if await db.users.find_one({"username": username}):
+            return
+        if await db.users.find_one({"role": "admin"}):
+            return
+        doc = {
+            "user_id": f"user_admin_{uuid.uuid4().hex[:10]}",
+            "email": os.environ.get("ADMIN_EMAIL", f"{username}@admin.local").strip().lower(),
+            "name": os.environ.get("ADMIN_NAME", "Administrator"),
+            "picture": "",
+            "role": "admin",
+            "manual": True,
+            "pin": None,
+            "username": username,
+            "password_hash": hash_password(admin_password),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.users.insert_one(doc)
+        logger.info(f"[bootstrap] Admin awal dibuat: username='{username}'")
+    except Exception as e:
+        logger.error(f"[bootstrap] Gagal membuat admin awal: {e}")
 
 
 @app.on_event("shutdown")

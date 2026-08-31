@@ -1,0 +1,59 @@
+# ============================================================
+# EXCAVA.OPS - Docker Compose untuk Coolify v4 (>=4.3.x)
+# ------------------------------------------------------------
+# 3 service: mongo (database), backend (FastAPI), frontend (React+nginx).
+# Hanya SERVICE "frontend" yang diekspos ke domain publik.
+# nginx di frontend mem-proxy /api ke backend (satu origin -> cookie login aman).
+# ============================================================
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      # Koneksi database internal (jangan diubah host-nya)
+      - MONGO_URL=mongodb://mongo:27017
+      - DB_NAME=${DB_NAME:-excava_ops}
+      # Karena frontend & backend satu domain via nginx, CORS boleh dibiarkan default
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # Bootstrap admin awal (WAJIB diisi saat deploy pertama agar bisa login)
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - ADMIN_NAME=${ADMIN_NAME:-Administrator}
+      - ADMIN_EMAILS=${ADMIN_EMAILS:-}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    expose:
+      - "8001"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Kosong = same-origin (nginx proxy /api). Biarkan kosong untuk Coolify.
+        REACT_APP_BACKEND_URL: ""
+    restart: unless-stopped
+    depends_on:
+      - backend
+    # Coolify: assign domain kamu ke service ini, container port 80.
+    # (Opsional) Auto-generate domain oleh Coolify: aktifkan baris di bawah.
+    # environment:
+    #   - SERVICE_FQDN_FRONTEND=/
+    expose:
+      - "80"
+
+volumes:
+  mongo_data:
