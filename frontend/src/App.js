@@ -13,6 +13,7 @@ import ReportsPage from "@/pages/ReportsPage";
 import UsersPage from "@/pages/UsersPage";
 import PengurusPage from "@/pages/PengurusPage";
 import FinancePage from "@/pages/FinancePage";
+import WhatsAppInboxPage from "@/pages/WhatsAppInboxPage";
 import AppShell from "@/components/AppShell";
 import "@/App.css";
 
@@ -50,6 +51,7 @@ function AppRouter() {
       <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
       <Route path="/pengurus" element={<ProtectedRoute><PengurusPage /></ProtectedRoute>} />
       <Route path="/finance" element={<ProtectedRoute adminOnly><FinancePage /></ProtectedRoute>} />
+      <Route path="/wa-inbox" element={<ProtectedRoute adminOnly><WhatsAppInboxPage /></ProtectedRoute>} />
       <Route path="/users" element={<ProtectedRoute adminOnly><UsersPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

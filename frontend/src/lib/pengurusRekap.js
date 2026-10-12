@@ -20,6 +20,8 @@ export const METRICS = [
   ["gaji", "Gaji Operator"],
   ["sparepart", "Sparepart"],
   ["bersih", "Penghasilan Bersih"],
+  ["diterima", "Transfer Diterima"],
+  ["piutang", "Piutang (Belum Dibayar)"],
 ];
 
 const num = (n) => Number(n || 0).toLocaleString("id-ID", { maximumFractionDigits: 2 });
@@ -72,17 +74,17 @@ export function exportPengurusRekapPDF(data, meta, filename) {
     startY: y,
     margin: { top: hh + 6, bottom: fh + 6, left: mx, right: mx },
     theme: "grid",
-    head: [["No", "Pengurus", "Tarif/Jam", "Unit Diurus", "Total Jam", "Pendapatan", "Gaji Operator", "Sparepart", "Penghasilan Bersih"]],
+    head: [["No", "Pengurus", "Tarif/Jam", "Unit Diurus", "Total Jam", "Pendapatan", "Gaji Operator", "Sparepart", "Penghasilan Bersih", "Transfer Diterima", "Piutang"]],
     body: [
-      ...data.rows.map((r, i) => [i + 1, r.nama, r.tarif_pengurus ? rp(r.tarif_pengurus) : "per unit", (r.units || []).join(", ") || "-", num(r.total.jam), rp(r.total.pendapatan), rp(r.total.gaji), rp(r.total.sparepart), rp(r.total.bersih)]),
-      ["", "TOTAL", "", "", num(data.total.jam), rp(data.total.pendapatan), rp(data.total.gaji), rp(data.total.sparepart), rp(data.total.bersih)],
+      ...data.rows.map((r, i) => [i + 1, r.nama, r.tarif_pengurus ? rp(r.tarif_pengurus) : "per unit", (r.units || []).join(", ") || "-", num(r.total.jam), rp(r.total.pendapatan), rp(r.total.gaji), rp(r.total.sparepart), rp(r.total.bersih), rp(r.total.diterima), rp(r.total.piutang)]),
+      ["", "TOTAL", "", "", num(data.total.jam), rp(data.total.pendapatan), rp(data.total.gaji), rp(data.total.sparepart), rp(data.total.bersih), rp(data.total.diterima), rp(data.total.piutang)],
     ],
     styles: { font: "times", fontSize: 8.5, cellPadding: 1.4, lineColor: [150, 160, 170], lineWidth: 0.2, textColor: [20, 20, 20] },
     headStyles: { fillColor: NAVY, textColor: 255, fontStyle: "bold", halign: "center" },
-    columnStyles: { 0: { cellWidth: 9, halign: "center" }, 1: { cellWidth: 40 }, 2: { cellWidth: 24, halign: "right" }, 4: { cellWidth: 20, halign: "right" }, 5: { cellWidth: 30, halign: "right" }, 6: { cellWidth: 28, halign: "right" }, 7: { cellWidth: 28, halign: "right" }, 8: { cellWidth: 32, halign: "right" } },
+    columnStyles: { 0: { cellWidth: 8, halign: "center" }, 1: { cellWidth: 30 }, 2: { cellWidth: 20, halign: "right" }, 4: { cellWidth: 15, halign: "right" }, 5: { cellWidth: 25, halign: "right" }, 6: { cellWidth: 24, halign: "right" }, 7: { cellWidth: 24, halign: "right" }, 8: { cellWidth: 26, halign: "right" }, 9: { cellWidth: 26, halign: "right" }, 10: { cellWidth: 24, halign: "right" } },
     didParseCell: (d) => {
       if (d.section === "body" && d.row.index === data.rows.length) { d.cell.styles.fontStyle = "bold"; d.cell.styles.fillColor = [254, 243, 199]; }
-      if (d.section === "body" && d.column.index === 8 && String(d.cell.raw).startsWith("-")) d.cell.styles.textColor = [200, 30, 20];
+      if (d.section === "body" && [8, 10].includes(d.column.index) && String(d.cell.raw).startsWith("-")) d.cell.styles.textColor = [200, 30, 20];
     },
     didDrawPage: () => kop(),
   });
@@ -116,7 +118,7 @@ export function exportPengurusRekapPDF(data, meta, filename) {
   let fy = doc.lastAutoTable.finalY + 6;
   if (fy + 30 > H - fh) { doc.addPage(); kop(); fy = hh + 10; }
   doc.setFont("times", "italic"); doc.setFontSize(8); doc.setTextColor(90, 90, 90);
-  doc.text("Pendapatan = Jam kerja (HM) × tarif sewa per jam (tarif unit; bila kosong memakai tarif pengurus). Bersih = Pendapatan - (Gaji operator + Sparepart).", mx, fy);
+  doc.text("Pendapatan = Jam kerja (HM) × tarif sewa per jam (tarif unit; bila kosong memakai tarif pengurus). Bersih = Pendapatan - (Gaji operator + Sparepart). Piutang = Pendapatan - Transfer diterima.", mx, fy);
   doc.setFont("times", "normal"); doc.setFontSize(9.5); doc.setTextColor(20, 20, 20);
   doc.text(`Dicetak: ${dateLong()}`, W - mx, fy + 5, { align: "right" });
   [["Dibuat oleh,", "Admin"], ["Mengetahui,", "Pimpinan"]].forEach(([a, b], i) => {
@@ -174,7 +176,7 @@ export async function exportPengurusRekapExcel(data, meta, filename) {
 
   // Ringkasan
   merge(row, 1, NC, "RINGKASAN TAHUNAN", { bold: true, size: 11, color: XL_NAVY }); row++;
-  const sumHead = ["No", "Pengurus", "Unit Diurus", "Tarif/Jam", "Total Jam", "Pendapatan", "Gaji Operator", "Sparepart", "Penghasilan Bersih"];
+  const sumHead = ["No", "Pengurus", "Unit Diurus", "Tarif/Jam", "Total Jam", "Pendapatan", "Gaji Operator", "Sparepart", "Penghasilan Bersih", "Transfer Diterima", "Piutang"];
   sumHead.forEach((h, i) => put(row, i + 1, h, { bold: true, color: "FFFFFFFF", fill: XL_NAVY, align: "center" }));
   ws.getRow(row).height = 20; row++;
   data.rows.forEach((r, i) => {
@@ -182,10 +184,11 @@ export async function exportPengurusRekapExcel(data, meta, filename) {
     put(row, 4, r.tarif_pengurus || "per unit", { align: "right", numFmt: RP }); put(row, 5, r.total.jam, { align: "right", numFmt: JAM });
     put(row, 6, r.total.pendapatan, { align: "right", numFmt: RP }); put(row, 7, r.total.gaji, { align: "right", numFmt: RP });
     put(row, 8, r.total.sparepart, { align: "right", numFmt: RP }); put(row, 9, r.total.bersih, { align: "right", numFmt: RP, bold: true });
+    put(row, 10, r.total.diterima, { align: "right", numFmt: RP }); put(row, 11, r.total.piutang, { align: "right", numFmt: RP });
     row++;
   });
   put(row, 1, ""); put(row, 2, "TOTAL", { bold: true, fill: "FFFEF3C7" }); put(row, 3, "", { fill: "FFFEF3C7" }); put(row, 4, "", { fill: "FFFEF3C7" });
-  ["jam", "pendapatan", "gaji", "sparepart", "bersih"].forEach((k, i) => put(row, 5 + i, data.total[k], { bold: true, align: "right", numFmt: k === "jam" ? JAM : RP, fill: "FFFEF3C7" }));
+  ["jam", "pendapatan", "gaji", "sparepart", "bersih", "diterima", "piutang"].forEach((k, i) => put(row, 5 + i, data.total[k], { bold: true, align: "right", numFmt: k === "jam" ? JAM : RP, fill: "FFFEF3C7" }));
   row += 2;
 
   // Rincian bulanan

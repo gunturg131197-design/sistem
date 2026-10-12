@@ -131,3 +131,13 @@ User choices: pendapatan = jam HM × tarif sewa/jam (tarif unit; fallback tarif 
 - [x] Komponen PengurusRekap (stat, toggle tampilan, tabel bulanan + detail expand, peringatan tarif kosong)
 - [x] Export PDF (A4 landscape berkop) & Excel berkop + nomor laporan otomatis
 - [x] Testing iteration_4: 100%
+
+## Phase 6 — Integrasi WhatsApp + AI pembaca gambar (Status: COMPLETED — menunggu kredensial WhatsApp)
+User choices: WhatsApp Business Cloud API resmi (kredensial menyusul), data diverifikasi admin dulu (Kotak Masuk WA), AI Gemini (gemini-3-flash-preview) via Emergent LLM Key.
+- [x] backend/wa_ai.py: OCR bukti transfer & foto layar HM (antre 1 request + retry 429), pencocokan keterangan "Sdlg 10" -> unit (nomor lambung/nama/merek/kode_wa)
+- [x] backend/whatsapp.py: webhook Meta (verify + HMAC, nonaktif sampai WHATSAPP_* diisi), upload manual, inbox (approve/reject/reprocess/delete), kontak WA, balasan WA otomatis
+- [x] Approve transfer -> Kas Masuk KM-TTP-xxx (pengurus, unit, no_ref anti-duplikat); approve HM -> Ops Report (HM awal = HM terakhir / gabung bila tanggal sama)
+- [x] Unit: field kode_wa; Kas Masuk: pengurus & no_ref
+- [x] Rekap Pengurus: metrik Transfer Diterima & Piutang (+ export)
+- [x] Testing iteration_5: backend 16/16, frontend OK
+- Pending dari user: WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN + deploy

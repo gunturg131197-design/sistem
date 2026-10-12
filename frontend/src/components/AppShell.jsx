@@ -12,6 +12,7 @@ import {
   ChartBarIcon,
   SignOutIcon,
   BankIcon,
+  WhatsappLogoIcon,
 } from "@phosphor-icons/react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +26,7 @@ const navItems = [
   { to: "/spareparts", label: "Sparepart", icon: WrenchIcon, testid: "nav-spareparts" },
   { to: "/reports", label: "Laporan", icon: ChartBarIcon, testid: "nav-reports" },
   { to: "/finance", label: "Keuangan", icon: BankIcon, testid: "nav-finance", adminOnly: true },
+  { to: "/wa-inbox", label: "Kotak Masuk WA", icon: WhatsappLogoIcon, testid: "nav-wa-inbox", adminOnly: true },
   { to: "/pengurus", label: "Pengurus", icon: HardHatIcon, testid: "nav-pengurus" },
   { to: "/users", label: "Operators", icon: UsersThreeIcon, testid: "nav-users", adminOnly: true },
 ];

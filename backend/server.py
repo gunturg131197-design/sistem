@@ -12,7 +12,8 @@ from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
-from finance import build_finance_router, sync_kas_sparepart, sync_kas_payroll, unsync_kas
+from finance import build_finance_router, sync_kas_sparepart, sync_kas_payroll, unsync_kas, next_bukti
+from whatsapp import build_whatsapp_router
 
 
 ROOT_DIR = Path(__file__).parent
@@ -76,6 +77,7 @@ class Unit(BaseModel):
     merek_type: Optional[str] = ""
     pemilik_alat: Optional[str] = ""
     tarif_sewa_per_jam: Optional[float] = 0.0  # tarif sewa alat per jam (override tarif pengurus)
+    kode_wa: Optional[str] = ""  # alias keterangan WhatsApp, mis. "Sdlg 10, SDLG10"
     status: Optional[str] = "Aktif"  # Aktif | Standby | Breakdown | Servis | Selesai Sewa
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -93,6 +95,7 @@ class UnitCreate(BaseModel):
     merek_type: Optional[str] = ""
     pemilik_alat: Optional[str] = ""
     tarif_sewa_per_jam: Optional[float] = 0.0
+    kode_wa: Optional[str] = ""
     status: Optional[str] = "Aktif"
 
 
@@ -575,6 +578,7 @@ async def list_pengurus(user: User = Depends(get_current_user)):
 
 
 # ---------- Rekap Penghasilan per Pengurus (admin) ----------
+REKAP_KEYS = ("jam", "pendapatan", "gaji", "sparepart", "pengeluaran", "bersih", "diterima", "piutang")
 BULAN_ID = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
 
 
@@ -592,6 +596,7 @@ async def pengurus_rekap(year: Optional[int] = None, admin: User = Depends(requi
     ops = await db.operations.find({"tanggal": {"$regex": f"^{ys}"}}, {"_id": 0}).to_list(50000)
     pays = await db.payroll.find({"periode": {"$regex": f"^{ys}"}}, {"_id": 0}).to_list(20000)
     sps = await db.spareparts.find({"tanggal": {"$regex": f"^{ys}"}}, {"_id": 0}).to_list(20000)
+    kms = await db.kas_masuk.find({"tanggal": {"$regex": f"^{ys}"}}, {"_id": 0}).to_list(20000)
 
     NONE = "(Tanpa Pengurus)"
 
@@ -611,7 +616,7 @@ async def pengurus_rekap(year: Optional[int] = None, admin: User = Depends(requi
                 "nama": nama, "pengurus_id": r.get("id", ""), "tarif_pengurus": float(r.get("tarif_sewa_per_jam") or 0),
                 "units": set(), "jam_tanpa_tarif": 0.0,
                 "months": {f"{ys}-{m:02d}": {"periode": f"{ys}-{m:02d}", "bulan": BULAN_ID[m - 1], "jam": 0.0, "pendapatan": 0.0,
-                                             "gaji": 0.0, "sparepart": 0.0} for m in range(1, 13)},
+                                             "gaji": 0.0, "sparepart": 0.0, "diterima": 0.0} for m in range(1, 13)},
             }
         return rows[nama]
 
@@ -657,15 +662,26 @@ async def pengurus_rekap(year: Optional[int] = None, admin: User = Depends(requi
         if per in rw["months"]:
             rw["months"][per]["sparepart"] += float(sp.get("biaya") or 0)
 
+    # Transfer diterima (Kas Masuk) yang ditandai pengurus / unit
+    for km in kms:
+        nama = (km.get("pengurus") or "").strip() or ((units.get(km.get("unit_id")) or {}).get("pengurus") or "").strip()
+        if not nama:
+            continue
+        per = (km.get("tanggal") or "")[:7]
+        rw = row(norm(nama))
+        if per in rw["months"]:
+            rw["months"][per]["diterima"] += float(km.get("debit") or 0)
+
     out = []
     for nama, rw in rows.items():
         months = []
         for m in rw["months"].values():
             m["jam"] = round(m["jam"], 2)
+            m["piutang"] = m["pendapatan"] - m["diterima"]
             m["pengeluaran"] = m["gaji"] + m["sparepart"]
             m["bersih"] = m["pendapatan"] - m["pengeluaran"]
             months.append(m)
-        tot = {k: round(sum(m[k] for m in months), 2) for k in ("jam", "pendapatan", "gaji", "sparepart", "pengeluaran", "bersih")}
+        tot = {k: round(sum(m[k] for m in months), 2) for k in REKAP_KEYS}
         if nama == NONE and not any(tot.values()):
             continue
         out.append({
@@ -676,9 +692,9 @@ async def pengurus_rekap(year: Optional[int] = None, admin: User = Depends(requi
     out.sort(key=lambda r: (-r["total"]["pendapatan"], r["nama"].lower()))
     grand_months = []
     for i in range(12):
-        grand_months.append({k: round(sum(r["months"][i][k] for r in out), 2) for k in ("jam", "pendapatan", "gaji", "sparepart", "pengeluaran", "bersih")}
+        grand_months.append({k: round(sum(r["months"][i][k] for r in out), 2) for k in REKAP_KEYS}
                             | {"periode": f"{ys}-{i + 1:02d}", "bulan": BULAN_ID[i]})
-    grand = {k: round(sum(r["total"][k] for r in out), 2) for k in ("jam", "pendapatan", "gaji", "sparepart", "pengeluaran", "bersih")}
+    grand = {k: round(sum(r["total"][k] for r in out), 2) for k in REKAP_KEYS}
     return {"year": y, "rows": out, "months": grand_months, "total": grand}
 
 
@@ -1245,6 +1261,7 @@ async def reports_units(periode: Optional[str] = None, user: User = Depends(get_
 
 app.include_router(api_router)
 app.include_router(build_finance_router(db, require_admin))
+app.include_router(build_whatsapp_router(db, require_admin, {"next_bukti": next_bukti}))
 
 app.add_middleware(
     CORSMiddleware,

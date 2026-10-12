@@ -64,3 +64,9 @@ Aplikasi sistem pelaporan untuk alat berat excavator. Fields: unit excavator, no
 ## Update — Rekap Penghasilan per Pengurus — COMPLETED
 - Tarif Sewa per Jam di Unit (prioritas) & Pengurus (default).
 - Halaman Pengurus (admin): rekap per pengurus × bulan — Jam, Pendapatan (HM × tarif), Gaji Operator, Sparepart, Penghasilan Bersih; export PDF/Excel berkop.
+
+## Update — Integrasi WhatsApp + AI (Kotak Masuk WA) — COMPLETED (WhatsApp belum terhubung)
+- Menu "Kotak Masuk WA" (admin): upload / pesan WA berisi foto bukti transfer atau layar HM -> AI Gemini (gemini-3-flash-preview, Emergent LLM Key) membaca -> cocokkan keterangan (mis. "Sdlg 10") ke unit via nomor lambung / nama / Kode WhatsApp unit -> verifikasi admin -> Kas Masuk (KM-TTP, pengurus, no_ref anti-duplikat) atau Ops Report (HM).
+- Kontak WA (nomor operator/pengurus -> unit default / pengurus), tab Koneksi WhatsApp (status + webhook URL + langkah Meta).
+- Webhook /api/whatsapp/webhook siap (Meta Cloud API, verifikasi HMAC) — aktif setelah env WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN diisi & app di-deploy.
+- Rekap Pengurus: + Transfer Diterima & Piutang.

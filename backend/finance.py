@@ -31,6 +31,8 @@ class KasMasukIn(BaseModel):
     tujuan_dana: Optional[str] = ""
     debit: float = 0
     pic: Optional[str] = ""
+    pengurus: Optional[str] = ""
+    no_ref: Optional[str] = ""
 
 
 class KasKeluarIn(BaseModel):

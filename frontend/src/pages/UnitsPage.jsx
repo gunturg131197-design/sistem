@@ -17,7 +17,7 @@ import PengurusCombobox from "@/components/PengurusCombobox";
 const empty = {
   unit_name: "", nomor_lambung: "", serial_number: "", operator_id: "", operator_name: "", pengurus: "",
   merek_type: "", pemilik_alat: "", nama_proyek: "", lokasi_proyek: "", pengawas_lapangan: "", status: "Aktif",
-  tarif_sewa_per_jam: "",
+  tarif_sewa_per_jam: "", kode_wa: "",
 };
 const FIELD_KEYS = Object.keys(empty);
 
@@ -155,6 +155,10 @@ export default function UnitsPage() {
 
                     <Field label="Tarif Sewa per Jam">
                       <CurrencyInput data-testid="input-unit-tarif" className="rounded-sm mt-1.5" placeholder="Rp 0 (pakai tarif pengurus)" value={form.tarif_sewa_per_jam} onChange={(v) => setForm({ ...form, tarif_sewa_per_jam: v })} />
+                    </Field>
+
+                    <Field label="Kode WhatsApp (keterangan)">
+                      <Input data-testid="input-unit-kode-wa" className="rounded-sm mt-1.5" placeholder="Contoh: Sdlg 10 (pisahkan dengan koma)" value={form.kode_wa} onChange={e => setForm({ ...form, kode_wa: e.target.value })} />
                     </Field>
 
                     <SectionTitle hint="Data Umum · Form Hour Meter">// Data Proyek</SectionTitle>

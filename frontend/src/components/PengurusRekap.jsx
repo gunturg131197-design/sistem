@@ -15,6 +15,8 @@ const VIEWS = [
   ["pendapatan", "Pendapatan"],
   ["pengeluaran", "Pengeluaran"],
   ["bersih", "Penghasilan Bersih"],
+  ["diterima", "Transfer Diterima"],
+  ["piutang", "Piutang"],
   ["jam", "Jam Kerja"],
 ];
 const short = (k, v) => {
@@ -24,7 +26,7 @@ const short = (k, v) => {
   const s = a >= 1e9 ? `${(a / 1e9).toLocaleString("id-ID", { maximumFractionDigits: 2 })} M` : a >= 1e6 ? `${(a / 1e6).toLocaleString("id-ID", { maximumFractionDigits: 1 })} jt` : a.toLocaleString("id-ID");
   return (v < 0 ? "-" : "") + s;
 };
-const tone = (k, v) => (k === "bersih" ? (v < 0 ? "text-accent" : v > 0 ? "text-emerald-400" : "text-muted-foreground") : k === "pengeluaran" ? (v ? "text-accent" : "text-muted-foreground") : v ? "" : "text-muted-foreground");
+const tone = (k, v) => (k === "piutang" ? (v > 0 ? "text-accent" : v < 0 ? "text-emerald-400" : "text-muted-foreground") : k === "diterima" ? (v ? "text-emerald-400" : "text-muted-foreground") : k === "bersih" ? (v < 0 ? "text-accent" : v > 0 ? "text-emerald-400" : "text-muted-foreground") : k === "pengeluaran" ? (v ? "text-accent" : "text-muted-foreground") : v ? "" : "text-muted-foreground");
 
 export default function PengurusRekap({ refreshKey }) {
   const thisYear = new Date().getFullYear();
@@ -68,7 +70,7 @@ export default function PengurusRekap({ refreshKey }) {
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-primary">// Rekap Penghasilan</p>
           <h2 className="font-display font-black text-3xl tracking-tighter">Penghasilan per Pengurus · {year}</h2>
-          <p className="text-sm text-muted-foreground mt-1 max-w-2xl">Pendapatan = jam kerja (HM) × tarif sewa per jam. Pengeluaran = gaji operator + sparepart unit yang diurus. Bersih = pendapatan − pengeluaran.</p>
+          <p className="text-sm text-muted-foreground mt-1 max-w-2xl">Pendapatan = jam kerja (HM) × tarif sewa per jam. Pengeluaran = gaji operator + sparepart unit yang diurus. Bersih = pendapatan − pengeluaran. Transfer Diterima = Kas Masuk yang ditandai pengurus (termasuk dari WhatsApp); Piutang = pendapatan − transfer diterima.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Select value={String(year)} onValueChange={(v) => setYear(Number(v))}>
