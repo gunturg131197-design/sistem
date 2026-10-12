@@ -16,6 +16,7 @@ import FinancePage from "@/pages/FinancePage";
 import WhatsAppInboxPage from "@/pages/WhatsAppInboxPage";
 import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import HelpPage from "@/pages/HelpPage";
+import BonusAdminPage from "@/pages/BonusAdminPage";
 import AppShell from "@/components/AppShell";
 import "@/App.css";
 
@@ -54,6 +55,7 @@ function AppRouter() {
       <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
       <Route path="/pengurus" element={<ProtectedRoute><PengurusPage /></ProtectedRoute>} />
       <Route path="/finance" element={<ProtectedRoute adminOnly><FinancePage /></ProtectedRoute>} />
+      <Route path="/bonus-admin" element={<ProtectedRoute adminOnly><BonusAdminPage /></ProtectedRoute>} />
       <Route path="/wa-inbox" element={<ProtectedRoute adminOnly><WhatsAppInboxPage /></ProtectedRoute>} />
       <Route path="/users" element={<ProtectedRoute adminOnly><UsersPage /></ProtectedRoute>} />
       <Route path="/bantuan" element={<ProtectedRoute adminOnly><HelpPage /></ProtectedRoute>} />
