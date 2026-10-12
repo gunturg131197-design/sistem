@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import api from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { PageHeader } from "@/components/common";
+import { PageHeader, CurrencyInput, formatIDR } from "@/components/common";
+import PengurusRekap from "@/components/PengurusRekap";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +20,7 @@ import {
   ComposedChart, Line,
 } from "recharts";
 
-const empty = { nama: "", kontak: "", catatan: "" };
+const empty = { nama: "", kontak: "", catatan: "", tarif_sewa_per_jam: "" };
 
 export default function PengurusPage() {
   const { user } = useAuth();
@@ -32,7 +33,9 @@ export default function PengurusPage() {
   const [chartData, setChartData] = useState(null); // { nama, monthly[] }
   const [chartLoading, setChartLoading] = useState(false);
 
+  const [rekapKey, setRekapKey] = useState(0);
   const load = async () => {
+    setRekapKey((k) => k + 1);
     const { data } = await api.get("/pengurus-excavator");
     setRows(data);
     // load stats in parallel (best-effort)
@@ -49,8 +52,9 @@ export default function PengurusPage() {
   const save = async () => {
     if (!form.nama.trim()) { toast.error("Nama wajib diisi"); return; }
     try {
-      if (editId) await api.patch(`/pengurus-excavator/${editId}`, form);
-      else await api.post("/pengurus-excavator", form);
+      const payload = { ...form, tarif_sewa_per_jam: Number(form.tarif_sewa_per_jam || 0) };
+      if (editId) await api.patch(`/pengurus-excavator/${editId}`, payload);
+      else await api.post("/pengurus-excavator", payload);
       toast.success(editId ? "Pengurus diperbarui" : "Pengurus ditambahkan");
       setOpen(false); setForm(empty); setEditId(null); load();
     } catch (e) {
@@ -115,6 +119,11 @@ export default function PengurusPage() {
                     <Input data-testid="input-pengurus-kontak" className="rounded-sm mt-1.5" placeholder="No HP / WA / email" value={form.kontak} onChange={e => setForm({ ...form, kontak: e.target.value })} />
                   </div>
                   <div>
+                    <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Tarif Sewa per Jam (Default)</Label>
+                    <CurrencyInput data-testid="input-pengurus-tarif" className="rounded-sm mt-1.5" placeholder="Rp 0" value={form.tarif_sewa_per_jam} onChange={(v) => setForm({ ...form, tarif_sewa_per_jam: v })} />
+                    <p className="font-mono text-[9px] text-muted-foreground mt-1">Dipakai untuk menghitung pendapatan bila unit tidak punya tarif sendiri.</p>
+                  </div>
+                  <div>
                     <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Catatan (Opsional)</Label>
                     <Textarea data-testid="input-pengurus-catatan" className="rounded-sm mt-1.5" rows={2} placeholder="Contoh: Pengurus shift pagi zona A" value={form.catatan} onChange={e => setForm({ ...form, catatan: e.target.value })} />
                   </div>
@@ -158,6 +167,7 @@ export default function PengurusPage() {
               <th className="p-3">Nama</th>
               <th className="p-3">Kontak</th>
               <th className="p-3">Catatan</th>
+              <th className="p-3 text-right">Tarif/Jam</th>
               <th className="p-3 text-right">Unit Diawasi</th>
               <th className="p-3 text-right">Cars</th>
               <th className="p-3 text-right">Jam</th>
@@ -166,7 +176,7 @@ export default function PengurusPage() {
           </thead>
           <tbody>
             {rows.length === 0 && (
-              <tr><td colSpan={7} className="p-8 text-center text-muted-foreground text-xs font-mono">// Belum ada pengurus terdaftar. Klik "Tambah Pengurus" untuk mulai.</td></tr>
+              <tr><td colSpan={8} className="p-8 text-center text-muted-foreground text-xs font-mono">// Belum ada pengurus terdaftar. Klik "Tambah Pengurus" untuk mulai.</td></tr>
             )}
             {rows.map(r => {
               const s = stats[r.id] || {};
@@ -179,6 +189,7 @@ export default function PengurusPage() {
                     ) : <span>—</span>}
                   </td>
                   <td className="p-3 text-muted-foreground text-xs max-w-xs truncate">{r.catatan || <span>—</span>}</td>
+                  <td className="p-3 text-right font-mono whitespace-nowrap" data-testid={`pengurus-tarif-${r.id}`}>{r.tarif_sewa_per_jam ? formatIDR(r.tarif_sewa_per_jam) : <span className="text-muted-foreground">—</span>}</td>
                   <td className="p-3 text-right font-mono">{s.units_count ?? 0}</td>
                   <td className="p-3 text-right font-mono text-primary">{s.total_cars ?? 0}</td>
                   <td className="p-3 text-right font-mono">{(s.total_jam ?? 0).toFixed(2)}</td>
@@ -195,7 +206,7 @@ export default function PengurusPage() {
                         </button>
                         <button
                           data-testid={`edit-pengurus-${r.id}`}
-                          onClick={() => { setForm({ nama: r.nama, kontak: r.kontak || "", catatan: r.catatan || "" }); setEditId(r.id); setOpen(true); }}
+                          onClick={() => { setForm({ nama: r.nama, kontak: r.kontak || "", catatan: r.catatan || "", tarif_sewa_per_jam: r.tarif_sewa_per_jam || "" }); setEditId(r.id); setOpen(true); }}
                           className="p-1.5 border border-border hover:border-primary hover:text-primary"
                         >
                           <PencilSimpleIcon size={14} weight="bold" />
@@ -216,6 +227,8 @@ export default function PengurusPage() {
           </tbody>
         </table>
       </div>
+
+      {isAdmin && <PengurusRekap refreshKey={rekapKey} />}
 
       {/* Monthly chart dialog */}
       <Dialog open={!!chartData} onOpenChange={(v) => { if (!v) setChartData(null); }}>

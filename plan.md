@@ -123,3 +123,11 @@ User choices: (a) Keuangan dulu, (b) Rekap Bulanan di halaman Laporan (tab), (c)
 - [x] Edit tanggal Surat Keluar/Invoice -> bulan romawi & tahun nomor ikut diperbarui (urut tetap)
 - [x] Laporan: tab "Rekap Bulanan Excavator" (tabel 12 kolom sesuai form PDF) + export PDF A3/Excel/Word
 - [x] Testing agent iteration_3: backend 36/36, frontend 100%
+
+## Phase 5 — Rekap Penghasilan per Pengurus (Status: COMPLETED)
+User choices: pendapatan = jam HM × tarif sewa/jam (tarif unit; fallback tarif pengurus); pengeluaran = gaji operator + sparepart; tampil di halaman Pengurus; tabel pengurus × Jan–Des + total; export Excel/PDF berkop.
+- [x] Field `tarif_sewa_per_jam` di Unit & Pengurus
+- [x] GET /api/pengurus-rekap?year= (admin)
+- [x] Komponen PengurusRekap (stat, toggle tampilan, tabel bulanan + detail expand, peringatan tarif kosong)
+- [x] Export PDF (A4 landscape berkop) & Excel berkop + nomor laporan otomatis
+- [x] Testing iteration_4: 100%

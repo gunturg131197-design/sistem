@@ -75,6 +75,7 @@ class Unit(BaseModel):
     pengawas_lapangan: Optional[str] = ""
     merek_type: Optional[str] = ""
     pemilik_alat: Optional[str] = ""
+    tarif_sewa_per_jam: Optional[float] = 0.0  # tarif sewa alat per jam (override tarif pengurus)
     status: Optional[str] = "Aktif"  # Aktif | Standby | Breakdown | Servis | Selesai Sewa
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -91,6 +92,7 @@ class UnitCreate(BaseModel):
     pengawas_lapangan: Optional[str] = ""
     merek_type: Optional[str] = ""
     pemilik_alat: Optional[str] = ""
+    tarif_sewa_per_jam: Optional[float] = 0.0
     status: Optional[str] = "Aktif"
 
 
@@ -191,6 +193,7 @@ class PengurusExcavator(BaseModel):
     nama: str
     kontak: Optional[str] = ""
     catatan: Optional[str] = ""
+    tarif_sewa_per_jam: Optional[float] = 0.0
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -198,6 +201,7 @@ class PengurusExcavatorCreate(BaseModel):
     nama: str
     kontak: Optional[str] = ""
     catatan: Optional[str] = ""
+    tarif_sewa_per_jam: Optional[float] = 0.0
 
 
 class RoleUpdate(BaseModel):
@@ -570,6 +574,114 @@ async def list_pengurus(user: User = Depends(get_current_user)):
     return sorted(seen.values(), key=lambda s: s.lower())
 
 
+# ---------- Rekap Penghasilan per Pengurus (admin) ----------
+BULAN_ID = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
+
+
+@api_router.get("/pengurus-rekap")
+async def pengurus_rekap(year: Optional[int] = None, admin: User = Depends(require_admin)):
+    """Penghasilan per pengurus per bulan:
+    pendapatan = total jam (HM) x tarif sewa/jam (tarif unit, bila 0 pakai tarif pengurus);
+    pengeluaran = gaji operator (payroll) + sparepart dari unit yang diurus;
+    bersih = pendapatan - pengeluaran."""
+    y = year or datetime.now(timezone.utc).year
+    ys = str(y)
+    units = {u["id"]: u for u in await db.units.find({}, {"_id": 0}).to_list(5000)}
+    registry = await db.pengurus_excavator.find({}, {"_id": 0}).to_list(1000)
+    reg_by_key = {(r.get("nama") or "").strip().lower(): r for r in registry}
+    ops = await db.operations.find({"tanggal": {"$regex": f"^{ys}"}}, {"_id": 0}).to_list(50000)
+    pays = await db.payroll.find({"periode": {"$regex": f"^{ys}"}}, {"_id": 0}).to_list(20000)
+    sps = await db.spareparts.find({"tanggal": {"$regex": f"^{ys}"}}, {"_id": 0}).to_list(20000)
+
+    NONE = "(Tanpa Pengurus)"
+
+    def norm(n):
+        n = (n or "").strip()
+        if not n:
+            return NONE
+        r = reg_by_key.get(n.lower())
+        return r["nama"] if r else n
+
+    rows = {}
+
+    def row(nama):
+        if nama not in rows:
+            r = reg_by_key.get(nama.lower()) or {}
+            rows[nama] = {
+                "nama": nama, "pengurus_id": r.get("id", ""), "tarif_pengurus": float(r.get("tarif_sewa_per_jam") or 0),
+                "units": set(), "jam_tanpa_tarif": 0.0,
+                "months": {f"{ys}-{m:02d}": {"periode": f"{ys}-{m:02d}", "bulan": BULAN_ID[m - 1], "jam": 0.0, "pendapatan": 0.0,
+                                             "gaji": 0.0, "sparepart": 0.0} for m in range(1, 13)},
+            }
+        return rows[nama]
+
+    for r in registry:
+        row(r["nama"])
+
+    # jam per (unit, bulan, pengurus) untuk menentukan pengurus dominan bagi biaya
+    share = {}
+    for o in ops:
+        per = (o.get("tanggal") or "")[:7]
+        u = units.get(o.get("unit_id")) or {}
+        nama = norm(o.get("pengurus") or u.get("pengurus"))
+        rw = row(nama)
+        if per not in rw["months"]:
+            continue
+        jam = float(o.get("total_jam") or 0)
+        tarif = float(u.get("tarif_sewa_per_jam") or 0) or rw["tarif_pengurus"]
+        m = rw["months"][per]
+        m["jam"] += jam
+        m["pendapatan"] += jam * tarif
+        if tarif <= 0:
+            rw["jam_tanpa_tarif"] += jam
+        if u.get("unit_name"):
+            rw["units"].add(f"{u['unit_name']} - {u.get('nomor_lambung', '')}")
+        k = (o.get("unit_id"), per)
+        share.setdefault(k, {})
+        share[k][nama] = share[k].get(nama, 0) + jam
+
+    def owner(unit_id, per):
+        s = share.get((unit_id, per))
+        if s:
+            return max(s.items(), key=lambda kv: kv[1])[0]
+        return norm((units.get(unit_id) or {}).get("pengurus"))
+
+    for p in pays:
+        per = p.get("periode") or ""
+        rw = row(owner(p.get("unit_id"), per))
+        if per in rw["months"]:
+            rw["months"][per]["gaji"] += float(p.get("gaji") or 0)
+    for sp in sps:
+        per = (sp.get("tanggal") or "")[:7]
+        rw = row(owner(sp.get("unit_id"), per))
+        if per in rw["months"]:
+            rw["months"][per]["sparepart"] += float(sp.get("biaya") or 0)
+
+    out = []
+    for nama, rw in rows.items():
+        months = []
+        for m in rw["months"].values():
+            m["jam"] = round(m["jam"], 2)
+            m["pengeluaran"] = m["gaji"] + m["sparepart"]
+            m["bersih"] = m["pendapatan"] - m["pengeluaran"]
+            months.append(m)
+        tot = {k: round(sum(m[k] for m in months), 2) for k in ("jam", "pendapatan", "gaji", "sparepart", "pengeluaran", "bersih")}
+        if nama == NONE and not any(tot.values()):
+            continue
+        out.append({
+            "nama": nama, "pengurus_id": rw["pengurus_id"], "tarif_pengurus": rw["tarif_pengurus"],
+            "units": sorted(rw["units"]), "jam_tanpa_tarif": round(rw["jam_tanpa_tarif"], 2),
+            "months": months, "total": tot,
+        })
+    out.sort(key=lambda r: (-r["total"]["pendapatan"], r["nama"].lower()))
+    grand_months = []
+    for i in range(12):
+        grand_months.append({k: round(sum(r["months"][i][k] for r in out), 2) for k in ("jam", "pendapatan", "gaji", "sparepart", "pengeluaran", "bersih")}
+                            | {"periode": f"{ys}-{i + 1:02d}", "bulan": BULAN_ID[i]})
+    grand = {k: round(sum(r["total"][k] for r in out), 2) for k in ("jam", "pendapatan", "gaji", "sparepart", "pengeluaran", "bersih")}
+    return {"year": y, "rows": out, "months": grand_months, "total": grand}
+
+
 # ---------- Pengurus Excavator Registry ----------
 @api_router.get("/pengurus-excavator", response_model=List[PengurusExcavator])
 async def list_pengurus_excavator(user: User = Depends(get_current_user)):
@@ -655,7 +767,8 @@ async def create_pengurus_excavator(body: PengurusExcavatorCreate, admin: User =
     )
     if existing:
         raise HTTPException(status_code=400, detail="Pengurus dengan nama ini sudah ada")
-    obj = PengurusExcavator(nama=nama, kontak=(body.kontak or "").strip(), catatan=(body.catatan or "").strip())
+    obj = PengurusExcavator(nama=nama, kontak=(body.kontak or "").strip(), catatan=(body.catatan or "").strip(),
+                            tarif_sewa_per_jam=float(body.tarif_sewa_per_jam or 0))
     doc = obj.model_dump()
     doc["created_at"] = doc["created_at"].isoformat()
     await db.pengurus_excavator.insert_one(doc)
@@ -673,7 +786,8 @@ async def update_pengurus_excavator(pid: str, body: PengurusExcavatorCreate, adm
     old_nama = current["nama"]
     await db.pengurus_excavator.update_one(
         {"id": pid},
-        {"$set": {"nama": new_nama, "kontak": (body.kontak or "").strip(), "catatan": (body.catatan or "").strip()}},
+        {"$set": {"nama": new_nama, "kontak": (body.kontak or "").strip(), "catatan": (body.catatan or "").strip(),
+                  "tarif_sewa_per_jam": float(body.tarif_sewa_per_jam or 0)}},
     )
     # Cascade rename in units + operations (case-insensitive)
     if new_nama != old_nama:

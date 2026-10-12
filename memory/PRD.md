@@ -60,3 +60,7 @@ Aplikasi sistem pelaporan untuk alat berat excavator. Fields: unit excavator, no
 - Menu "Keuangan" (admin only, /finance): Dashboard arus kas, Kas Masuk (KM-TTP-xxx), Kas Keluar (BK-TTP-xxx dari nota sparepart otomatis, KK-TTP-xxx dari payroll otomatis / manual), Invoice (INV/TTP/xxx/romawi/tahun), Surat Masuk, Surat Keluar (SP/TTP/201.../romawi/tahun), Rekap Bulanan; export Excel & PDF per tab.
 - Laporan: tab "Rekap Bulanan Excavator" (12 kolom sesuai form PDF) + export PDF A3 / Excel / Word.
 - Tested: iteration_3 (100%).
+
+## Update — Rekap Penghasilan per Pengurus — COMPLETED
+- Tarif Sewa per Jam di Unit (prioritas) & Pengurus (default).
+- Halaman Pengurus (admin): rekap per pengurus × bulan — Jam, Pendapatan (HM × tarif), Gaji Operator, Sparepart, Penghasilan Bersih; export PDF/Excel berkop.

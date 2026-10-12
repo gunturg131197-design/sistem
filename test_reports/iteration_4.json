@@ -1,0 +1,47 @@
+{
+  "summary": "Completed testing of Pengurus Rekap (income recap) feature - all backend APIs and frontend UI working correctly",
+  "backend_issues": {
+    "critical_bugs": [],
+    "flaky_endpoints": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "Backend: GET /api/pengurus-rekap (admin) - returns correct structure with year, rows, months, total",
+    "Backend: GET /api/pengurus-rekap (operator) - correctly returns 403 Forbidden",
+    "Backend: POST /api/pengurus-excavator with tarif_sewa_per_jam - creates and persists tarif",
+    "Backend: PATCH /api/pengurus-excavator - updates tarif_sewa_per_jam correctly",
+    "Backend: POST /api/units with tarif_sewa_per_jam - creates and persists unit tarif",
+    "Backend: PATCH /api/units - updates tarif_sewa_per_jam correctly",
+    "Backend: Calculation logic - TEST Pak Rudi shows 24 jam, Rp 8.400.000 pendapatan, Rp 4.005.000 bersih (correct)",
+    "Frontend: Admin sees rekap section on /pengurus page",
+    "Frontend: Year selector (rekap-pengurus-year) works correctly",
+    "Frontend: Stat cards display correctly - Total Pendapatan (Rp 8.400.000), Pengeluaran (Rp 4.395.000), Bersih (Rp 4.005.000), Jam (24)",
+    "Frontend: View toggles work - pendapatan, pengeluaran, bersih, jam",
+    "Frontend: Rekap table (rekap-pengurus-table) renders with monthly columns",
+    "Frontend: Expandable rows work - TEST Pak Rudi row expands to show detail metrics",
+    "Frontend: Export buttons present - rekap-pengurus-excel and rekap-pengurus-pdf",
+    "Frontend: Tarif input field (input-pengurus-tarif) in Pengurus form works with currency formatting",
+    "Frontend: Tarif input field (input-unit-tarif) in Units form works with currency formatting",
+    "Frontend: Operator does NOT see rekap section (correct access control)",
+    "Regression: Pengurus CRUD still works",
+    "Regression: Monthly chart dialog (chart-pengurus-{id}) still works",
+    "Regression: Units CRUD still works",
+    "Regression: Finance page still works",
+    "Regression: Reports page still works"
+  ],
+  "test_report_links": [
+    "/app/backend_test.py"
+  ],
+  "success_percentage": {
+    "backend": "100% (9/9 tests passed)",
+    "frontend": "100% (all UI elements and interactions working)"
+  },
+  "updated_files": [],
+  "action_item_for_main_agent": "",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_test_itself": false
+}

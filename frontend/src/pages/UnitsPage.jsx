@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import api from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { PageHeader, StatusBadge, UNIT_STATUSES } from "@/components/common";
+import { PageHeader, StatusBadge, UNIT_STATUSES, CurrencyInput } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +17,7 @@ import PengurusCombobox from "@/components/PengurusCombobox";
 const empty = {
   unit_name: "", nomor_lambung: "", serial_number: "", operator_id: "", operator_name: "", pengurus: "",
   merek_type: "", pemilik_alat: "", nama_proyek: "", lokasi_proyek: "", pengawas_lapangan: "", status: "Aktif",
+  tarif_sewa_per_jam: "",
 };
 const FIELD_KEYS = Object.keys(empty);
 
@@ -64,7 +65,7 @@ export default function UnitsPage() {
       return;
     }
     const opUser = operators.find(o => o.user_id === form.operator_id);
-    const payload = { ...form, operator_name: opUser?.name || "" };
+    const payload = { ...form, operator_name: opUser?.name || "", tarif_sewa_per_jam: Number(form.tarif_sewa_per_jam || 0) };
     try {
       if (editId) await api.patch(`/units/${editId}`, payload);
       else await api.post("/units", payload);
@@ -150,6 +151,10 @@ export default function UnitsPage() {
                     </Field>
                     <Field label="Pemilik Alat">
                       <Input data-testid="input-pemilik-alat" className="rounded-sm mt-1.5" placeholder="CV. Trirara Tunggal Putra / nama pemilik" value={form.pemilik_alat} onChange={e => setForm({ ...form, pemilik_alat: e.target.value })} />
+                    </Field>
+
+                    <Field label="Tarif Sewa per Jam">
+                      <CurrencyInput data-testid="input-unit-tarif" className="rounded-sm mt-1.5" placeholder="Rp 0 (pakai tarif pengurus)" value={form.tarif_sewa_per_jam} onChange={(v) => setForm({ ...form, tarif_sewa_per_jam: v })} />
                     </Field>
 
                     <SectionTitle hint="Data Umum · Form Hour Meter">// Data Proyek</SectionTitle>
