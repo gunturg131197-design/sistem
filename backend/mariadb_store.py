@@ -913,14 +913,25 @@ class Store:
 
 
 def build_url_from_env(env: dict) -> str:
-    """MARIADB_URL / DATABASE_URL, atau rakit dari MARIADB_HOST/PORT/USER/PASSWORD/DATABASE."""
-    url = env.get("MARIADB_URL") or env.get("DATABASE_URL") or ""
-    if url:
+    """Urutan prioritas koneksi MariaDB:
+    1. MARIADB_URL / DATABASE_URL (URL lengkap, mis. mysql+asyncmy://user:pass@host:3306/db)
+    2. DB_HOST / DB_PORT / DB_DATABASE / DB_USERNAME / DB_PASSWORD   (format standar Coolify)
+    3. MARIADB_HOST / MARIADB_PORT / MARIADB_DATABASE / MARIADB_USER / MARIADB_PASSWORD (docker-compose)
+    """
+    url = (env.get("MARIADB_URL") or env.get("DATABASE_URL") or "").strip()
+    if url and "://" in url and not url.startswith(("mongodb", "postgres", "sqlite")):
         return url
     from urllib.parse import quote_plus
-    host = env.get("MARIADB_HOST", "127.0.0.1")
-    port = env.get("MARIADB_PORT", "3306")
-    user = env.get("MARIADB_USER", "trirara")
-    pwd = env.get("MARIADB_PASSWORD", "")
-    name = env.get("MARIADB_DATABASE", "trirara")
+
+    def pick(*keys, default=""):
+        for k in keys:
+            v = (env.get(k) or "").strip()
+            if v:
+                return v
+        return default
+    host = pick("DB_HOST", "MARIADB_HOST", default="127.0.0.1")
+    port = pick("DB_PORT", "MARIADB_PORT", default="3306")
+    name = pick("DB_DATABASE", "MARIADB_DATABASE", default="trirara")
+    user = pick("DB_USERNAME", "DB_USER", "MARIADB_USER", default="trirara")
+    pwd = pick("DB_PASSWORD", "MARIADB_PASSWORD")
     return f"mysql+asyncmy://{quote_plus(user)}:{quote_plus(pwd)}@{host}:{port}/{name}?charset=utf8mb4"

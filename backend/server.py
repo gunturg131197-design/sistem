@@ -1,6 +1,7 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Cookie, Header
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from mariadb_store import Store, ReturnDocument, build_url_from_env
 import os
 import logging
@@ -52,7 +53,7 @@ async def _init_mariadb():
                 lg.warning("[mariadb] menjalankan scripts/preview_mariadb.sh (preview lokal)")
                 _sp.Popen(["bash", str(script)], stdout=open("/tmp/preview_mariadb.log", "a"), stderr=_sp.STDOUT, start_new_session=True)
             await _asyncio.sleep(2)
-    raise RuntimeError("Tidak bisa terhubung ke MariaDB — periksa MARIADB_URL / MARIADB_HOST")
+    raise RuntimeError("Tidak bisa terhubung ke MariaDB — periksa DB_HOST / DB_PORT / DB_DATABASE / DB_USERNAME / DB_PASSWORD (atau MARIADB_URL)")
 
 
 @app.on_event("startup")
@@ -1328,6 +1329,35 @@ app.include_router(build_summary_router(db, require_admin))
 app.include_router(build_reports_router(db, require_admin))
 app.include_router(build_backup_router(db, require_admin))
 app.include_router(build_bonus_router(db, require_admin, next_bukti))
+
+
+@app.get("/api/health")
+async def health():
+    """Healthcheck untuk Docker/Coolify: cek koneksi MariaDB."""
+    try:
+        await db.ping()
+        return {"status": "ok", "database": "mariadb", "db": db.name}
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"status": "error", "database": "mariadb", "detail": type(e).__name__}, status_code=503)
+
+
+# ---------- Frontend React (build) disajikan dari container yang sama (Dockerfile root) ----------
+_STATIC_DIR = Path(os.environ.get("STATIC_DIR", str(ROOT_DIR / "static")))
+if (_STATIC_DIR / "index.html").exists():
+    from fastapi.responses import FileResponse as _FileResponse
+
+    _STATIC_ROOT = _STATIC_DIR.resolve()
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def _spa(full_path: str):
+        if full_path == "api" or full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+        target = (_STATIC_ROOT / full_path).resolve()
+        if full_path and target.is_file() and _STATIC_ROOT in target.parents:
+            cache = "public, max-age=31536000, immutable" if full_path.startswith("static/") else "public, max-age=3600"
+            return _FileResponse(target, headers={"Cache-Control": cache})
+        # React Router: semua path lain -> index.html (tanpa cache agar versi baru langsung terpakai)
+        return _FileResponse(_STATIC_ROOT / "index.html", headers={"Cache-Control": "no-cache"})
 
 app.add_middleware(
     CORSMiddleware,

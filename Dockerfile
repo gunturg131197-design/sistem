@@ -1,35 +1,84 @@
-# ============================================================
-# Dockerfile ROOT untuk FRONTEND (EXCAVA.OPS)
-# Coolify: Base Directory = /   |   Dockerfile = /Dockerfile
-# Build context = root repo, jadi path COPY relatif dari root repo.
+# syntax=docker/dockerfile:1.6
+# ============================================================================
+# TRIRARA / EXCAVA.OPS — Dockerfile TUNGGAL (root) untuk Coolify
+# Build Pack: Dockerfile   |   Base Directory: /   |   Dockerfile Location: /Dockerfile
 #
-# CATATAN STRUKTUR REPO:
-#   Repo ini menaruh folder "frontend/" & "backend/" LANGSUNG di root.
-#   Karena itu COPY memakai "frontend/...".
-#   Jika repo Anda menaruhnya di dalam subfolder (mis. sistem-ttp-cpanel/),
-#   ganti "frontend/" -> "sistem-ttp-cpanel/frontend/" pada baris COPY di bawah.
-# ============================================================
+# Stack  : React (CRA + craco) frontend  +  FastAPI (Python 3.11) backend  +  MariaDB (eksternal)
+# Hasil  : SATU container. FastAPI melayani API di /api/* dan file React hasil build
+#          di path lainnya (same-origin → tanpa CORS, cookie login aman).
+# Port   : env PORT (default 8000)  → isi "Ports Exposes" di Coolify = 8000
+#
+# Stage 1  frontend-build : node:20-alpine  → yarn build (static files)
+# Stage 2  backend-build  : python:3.11-slim → venv berisi dependency runtime saja
+# Stage 3  production     : python:3.11-slim → venv + kode backend + build frontend, user non-root
+# ============================================================================
 
-FROM node:20-alpine AS build
+# ---------------------------------------------------------------------------
+# Stage 1: build frontend React
+# ---------------------------------------------------------------------------
+FROM node:20-alpine AS frontend-build
+WORKDIR /build
 
-WORKDIR /app
+# Kosong = frontend memanggil API di origin yang sama (/api). Isi hanya bila backend di domain lain.
+ARG REACT_APP_BACKEND_URL=""
+ENV REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL} \
+    GENERATE_SOURCEMAP=false \
+    DISABLE_ESLINT_PLUGIN=true \
+    CI=false \
+    NODE_OPTIONS=--max-old-space-size=3072
 
-COPY frontend/package*.json ./
-
-RUN npm install --legacy-peer-deps
+# Layer dependency terpisah agar cache build dipakai ulang bila hanya kode yang berubah
+COPY frontend/package.json frontend/yarn.lock* ./
+RUN yarn install --frozen-lockfile --ignore-engines --network-timeout 600000 \
+    || yarn install --ignore-engines --network-timeout 600000
 
 COPY frontend/ ./
+RUN rm -f .env .env.* && yarn build
 
-RUN npm run build
+# ---------------------------------------------------------------------------
+# Stage 2: install dependency Python ke virtualenv
+# ---------------------------------------------------------------------------
+FROM python:3.11-slim AS backend-build
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+COPY backend/requirements.prod.txt /tmp/requirements.prod.txt
+RUN pip install --upgrade pip && pip install -r /tmp/requirements.prod.txt
+# Opsional: AI pembaca gambar WA (bukti transfer / foto HM) via EMERGENT_LLM_KEY.
+# Build arg INSTALL_AI=0 untuk melewati (image lebih kecil, fitur AI nonaktif). Gagal install tidak menggagalkan build.
+ARG INSTALL_AI=1
+RUN if [ "$INSTALL_AI" = "1" ]; then \
+      pip install emergentintegrations --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ \
+      || echo "WARN: emergentintegrations gagal dipasang - fitur AI baca-gambar nonaktif"; \
+    fi
 
+# ---------------------------------------------------------------------------
+# Stage 3: image produksi (kecil: tanpa node, tanpa build tools, tanpa dev deps)
+# ---------------------------------------------------------------------------
+FROM python:3.11-slim AS production
 
-FROM nginx:alpine
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    TZ=Asia/Makassar \
+    PORT=8000 \
+    STATIC_DIR=/app/static
 
-COPY --from=build /app/build /usr/share/nginx/html
+RUN groupadd --system --gid 10001 app && useradd --system --uid 10001 --gid app --home /app app
+WORKDIR /app
 
-# Wajib untuk React Router (deep-link/refresh tidak 404)
-COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=backend-build /opt/venv /opt/venv
+COPY --chown=app:app backend/ /app/
+COPY --from=frontend-build --chown=app:app /build/build /app/static
+RUN rm -f /app/.env /app/requirements.txt && mkdir -p /app/backups && chown app:app /app/backups
 
-EXPOSE 80
+USER app
+EXPOSE 8000
 
-CMD ["nginx", "-g", "daemon off;"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD python -c "import os,urllib.request;urllib.request.urlopen('http://127.0.0.1:%s/api/health' % os.environ.get('PORT','8000'), timeout=4)" || exit 1
+
+# 1 worker: tugas startup (migrasi/backfill) & penjadwal internal harus berjalan tunggal
+CMD ["sh", "-c", "exec uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips '*' --timeout-keep-alive 30"]
