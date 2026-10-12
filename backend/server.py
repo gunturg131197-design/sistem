@@ -17,6 +17,7 @@ from whatsapp import build_whatsapp_router
 from daily_summary import build_summary_router
 from wa_reports import build_reports_router
 from backup import build_backup_router
+from bonus import build_bonus_router, ensure_bonus_indexes
 
 
 ROOT_DIR = Path(__file__).parent
@@ -1268,6 +1269,7 @@ app.include_router(build_whatsapp_router(db, require_admin, {"next_bukti": next_
 app.include_router(build_summary_router(db, require_admin))
 app.include_router(build_reports_router(db, require_admin))
 app.include_router(build_backup_router(db, require_admin))
+app.include_router(build_bonus_router(db, require_admin, next_bukti))
 
 app.add_middleware(
     CORSMiddleware,
@@ -1314,6 +1316,14 @@ async def _bootstrap_admin():
         logger.info(f"[bootstrap] Admin awal dibuat: username='{username}'")
     except Exception as e:
         logger.error(f"[bootstrap] Gagal membuat admin awal: {e}")
+
+
+@app.on_event("startup")
+async def _bonus_indexes():
+    try:
+        await ensure_bonus_indexes(db)
+    except Exception as e:
+        logger.error(f"[bonus] index gagal: {e}")
 
 
 @app.on_event("startup")

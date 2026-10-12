@@ -18,11 +18,11 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 # Get backend URL from frontend .env
-BACKEND_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://theme-logo-studio.preview.emergentagent.com")
+BACKEND_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://admin-bonus-unit.preview.emergentagent.com")
 BASE_URL = f"{BACKEND_URL}/api"
 
-# Credentials from /app/memory/test_credentials.md
-ADMIN_USER = "admin"
+# Credentials from review_request
+ADMIN_USER = "admintest"
 ADMIN_PASS = "admin123"
 OPERATOR_USER = "budi"
 OPERATOR_PASS = "budi123"
@@ -627,6 +627,277 @@ class APITester:
         self.test("Daily Summary: Get history", "GET", "/wa/summary/history?limit=10", 200,
                  token=self.admin_token)
 
+    def test_bonus_admin_auth(self):
+        """Test Bonus Admin authorization."""
+        self.log("\n=== Testing Bonus Admin Authorization ===", "INFO")
+        
+        # Operator should get 403
+        if self.operator_token:
+            self.test("Bonus Admin: Operator access (should fail)", "GET", "/bonus-admin", 403,
+                     token=self.operator_token)
+        
+        # Unauthenticated should get 401
+        self.test("Bonus Admin: Unauthenticated access", "GET", "/bonus-admin", 401)
+        
+        # Admin should get 200
+        self.test("Bonus Admin: Admin access", "GET", "/bonus-admin", 200,
+                 token=self.admin_token)
+
+    def test_bonus_admin_get(self):
+        """Test GET /api/bonus-admin endpoint."""
+        self.log("\n=== Testing Bonus Admin GET ===", "INFO")
+        
+        # Get all bonuses
+        success, data = self.test("Bonus Admin: Get all", "GET", "/bonus-admin", 200,
+                                 token=self.admin_token)
+        if success:
+            settings = data.get("settings", {})
+            rows = data.get("rows", [])
+            total = data.get("total", {})
+            
+            self.log(f"  Settings: jam_per_bonus={settings.get('jam_per_bonus')}, "
+                    f"nominal={settings.get('nominal')}, "
+                    f"default_admin='{settings.get('default_admin')}'", "INFO")
+            self.log(f"  Found {len(rows)} units", "INFO")
+            self.log(f"  Total: jam={total.get('jam')}, bonus={total.get('bonus')}, "
+                    f"earned={total.get('earned')}, paid={total.get('paid')}", "INFO")
+            
+            # Verify calculation for existing units
+            for row in rows:
+                unit_name = row.get("unit_name", "")
+                nomor = row.get("nomor_lambung", "")
+                total_jam = row.get("total_jam", 0)
+                jumlah_bonus = row.get("jumlah_bonus", 0)
+                sisa_jam = row.get("sisa_jam", 0)
+                kurang_jam = row.get("kurang_jam", 0)
+                
+                self.log(f"  Unit {unit_name} {nomor}: {total_jam} jam -> "
+                        f"{jumlah_bonus} bonus, sisa {sisa_jam} jam, kurang {kurang_jam} jam", "INFO")
+                
+                # Verify SDLG 10 with 720 jam should have 2 bonuses
+                if "SDLG" in unit_name and "10" in nomor:
+                    if total_jam >= 720 and jumlah_bonus >= 2:
+                        self.log(f"  ✓ SDLG 10 calculation correct: {total_jam} jam -> {jumlah_bonus} bonuses", "PASS")
+                    else:
+                        self.log(f"  ✗ SDLG 10 calculation wrong: expected ≥720 jam & ≥2 bonuses, "
+                                f"got {total_jam} jam & {jumlah_bonus} bonuses", "FAIL")
+                
+                # Verify KMT 07 with 210 jam should have 0 bonuses
+                if "KMT" in unit_name and "07" in nomor:
+                    if total_jam >= 210 and jumlah_bonus == 0:
+                        self.log(f"  ✓ KMT 07 calculation correct: {total_jam} jam -> {jumlah_bonus} bonuses", "PASS")
+                    else:
+                        self.log(f"  ✗ KMT 07 calculation wrong: expected ≥210 jam & 0 bonuses, "
+                                f"got {total_jam} jam & {jumlah_bonus} bonuses", "FAIL")
+        
+        # Get with year filter
+        current_year = datetime.now().year
+        success, data = self.test("Bonus Admin: Get with year filter", "GET", 
+                                 f"/bonus-admin?year={current_year}", 200,
+                                 token=self.admin_token)
+        if success:
+            self.log(f"  Year {current_year}: {len(data.get('rows', []))} units", "INFO")
+
+    def test_bonus_admin_settings(self):
+        """Test Bonus Admin settings endpoints."""
+        self.log("\n=== Testing Bonus Admin Settings ===", "INFO")
+        
+        # Get current settings
+        success, settings = self.test("Bonus Admin: Get settings", "GET", "/bonus-admin/settings", 200,
+                                     token=self.admin_token)
+        if success:
+            self.log(f"  Current settings: enabled={settings.get('enabled')}, "
+                    f"jam_per_bonus={settings.get('jam_per_bonus')}, "
+                    f"nominal={settings.get('nominal')}", "INFO")
+        
+        # Save original settings for restoration
+        original_settings = settings.copy() if success else None
+        
+        # Test valid update
+        self.test("Bonus Admin: Update settings (valid)", "PUT", "/bonus-admin/settings", 200,
+                 token=self.admin_token,
+                 data={
+                     "enabled": True,
+                     "jam_per_bonus": 300,
+                     "nominal": 500000,
+                     "default_admin": "Siti Admin",
+                     "start_date": "",
+                     "unit_admins": {}
+                 })
+        
+        # Test invalid jam_per_bonus (< 1)
+        self.test("Bonus Admin: Update settings (jam < 1)", "PUT", "/bonus-admin/settings", 400,
+                 token=self.admin_token,
+                 data={
+                     "enabled": True,
+                     "jam_per_bonus": 0,
+                     "nominal": 500000,
+                     "default_admin": "Siti Admin",
+                     "start_date": "",
+                     "unit_admins": {}
+                 })
+        
+        # Test invalid jam_per_bonus (> 100000)
+        self.test("Bonus Admin: Update settings (jam > 100000)", "PUT", "/bonus-admin/settings", 400,
+                 token=self.admin_token,
+                 data={
+                     "enabled": True,
+                     "jam_per_bonus": 100001,
+                     "nominal": 500000,
+                     "default_admin": "Siti Admin",
+                     "start_date": "",
+                     "unit_admins": {}
+                 })
+        
+        # Test invalid start_date format
+        self.test("Bonus Admin: Update settings (invalid date)", "PUT", "/bonus-admin/settings", 400,
+                 token=self.admin_token,
+                 data={
+                     "enabled": True,
+                     "jam_per_bonus": 300,
+                     "nominal": 500000,
+                     "default_admin": "Siti Admin",
+                     "start_date": "2024-13-01",  # Invalid month
+                     "unit_admins": {}
+                 })
+        
+        # Restore original settings if we saved them
+        if original_settings:
+            self.test("Bonus Admin: Restore original settings", "PUT", "/bonus-admin/settings", 200,
+                     token=self.admin_token,
+                     data=original_settings)
+
+    def test_bonus_admin_pay(self):
+        """Test Bonus Admin payment flow."""
+        self.log("\n=== Testing Bonus Admin Payment ===", "INFO")
+        
+        # First, get current bonus data to find an unpaid bonus
+        success, data = self.test("Bonus Admin: Get data for payment test", "GET", "/bonus-admin", 200,
+                                 token=self.admin_token)
+        
+        if not success:
+            self.log("  Cannot test payment - failed to get bonus data", "WARN")
+            return
+        
+        # Find a unit with unpaid bonus
+        unpaid_bonus = None
+        for row in data.get("rows", []):
+            for item in row.get("items", []):
+                if item.get("status") == "belum":
+                    unpaid_bonus = {
+                        "unit_id": row.get("unit_id"),
+                        "unit": row.get("unit"),
+                        "milestone": item.get("milestone"),
+                        "admin": item.get("admin") or data.get("settings", {}).get("default_admin", "Test Admin")
+                    }
+                    break
+            if unpaid_bonus:
+                break
+        
+        if not unpaid_bonus:
+            self.log("  No unpaid bonuses found - skipping payment tests", "WARN")
+            return
+        
+        self.log(f"  Found unpaid bonus: {unpaid_bonus['unit']} milestone #{unpaid_bonus['milestone']}", "INFO")
+        
+        # Test payment with empty admin name (should use default admin if set)
+        success_empty, pay_empty = self.test("Bonus Admin: Pay with empty admin (uses default)", "POST", "/bonus-admin/pay", 200,
+                 token=self.admin_token,
+                 data={
+                     "unit_id": unpaid_bonus["unit_id"],
+                     "milestone": unpaid_bonus["milestone"],
+                     "tanggal": datetime.now().strftime("%Y-%m-%d"),
+                     "admin": ""
+                 })
+        
+        if success_empty:
+            bonus_id_empty = pay_empty.get("bonus_id")
+            self.log(f"  Payment with empty admin used default: {pay_empty.get('admin')}", "INFO")
+            # Cancel this payment to test again
+            self.test("Bonus Admin: Cancel test payment", "DELETE", 
+                     f"/bonus-admin/pay/{bonus_id_empty}", 200,
+                     token=self.admin_token)
+        
+        # Test payment for unreached milestone (should fail)
+        self.test("Bonus Admin: Pay unreached milestone", "POST", "/bonus-admin/pay", 404,
+                 token=self.admin_token,
+                 data={
+                     "unit_id": unpaid_bonus["unit_id"],
+                     "milestone": 999,  # Non-existent milestone
+                     "tanggal": datetime.now().strftime("%Y-%m-%d"),
+                     "admin": "Test Admin"
+                 })
+        
+        # Test valid payment
+        success, pay_result = self.test("Bonus Admin: Pay bonus (valid)", "POST", "/bonus-admin/pay", 200,
+                                       token=self.admin_token,
+                                       data={
+                                           "unit_id": unpaid_bonus["unit_id"],
+                                           "milestone": unpaid_bonus["milestone"],
+                                           "tanggal": datetime.now().strftime("%Y-%m-%d"),
+                                           "admin": unpaid_bonus["admin"]
+                                       })
+        
+        if success:
+            bonus_id = pay_result.get("bonus_id")
+            no_bukti = pay_result.get("no_bukti")
+            self.log(f"  Payment successful: bonus_id={bonus_id}, no_bukti={no_bukti}", "INFO")
+            
+            # Verify Kas Keluar entry was created
+            success_kk, kas_keluar = self.test("Bonus Admin: Verify Kas Keluar entry", "GET", 
+                                              "/finance/kas-keluar", 200,
+                                              token=self.admin_token)
+            if success_kk:
+                bonus_kk = [k for k in kas_keluar if k.get("source") == "bonus_admin" and k.get("source_id") == bonus_id]
+                if bonus_kk:
+                    self.log(f"  ✓ Kas Keluar entry found: {bonus_kk[0].get('no_bukti')}", "PASS")
+                else:
+                    self.log(f"  ✗ Kas Keluar entry not found for bonus_id={bonus_id}", "FAIL")
+            
+            # Test double payment (should fail)
+            self.test("Bonus Admin: Pay same bonus again (should fail)", "POST", "/bonus-admin/pay", 400,
+                     token=self.admin_token,
+                     data={
+                         "unit_id": unpaid_bonus["unit_id"],
+                         "milestone": unpaid_bonus["milestone"],
+                         "tanggal": datetime.now().strftime("%Y-%m-%d"),
+                         "admin": unpaid_bonus["admin"]
+                     })
+            
+            # Test cancel payment
+            success_cancel, _ = self.test("Bonus Admin: Cancel payment", "DELETE", 
+                                         f"/bonus-admin/pay/{bonus_id}", 200,
+                                         token=self.admin_token)
+            
+            if success_cancel:
+                self.log(f"  Payment cancelled successfully", "INFO")
+                
+                # Verify Kas Keluar entry was removed
+                success_kk2, kas_keluar2 = self.test("Bonus Admin: Verify Kas Keluar removed", "GET",
+                                                     "/finance/kas-keluar", 200,
+                                                     token=self.admin_token)
+                if success_kk2:
+                    bonus_kk2 = [k for k in kas_keluar2 if k.get("source") == "bonus_admin" and k.get("source_id") == bonus_id]
+                    if not bonus_kk2:
+                        self.log(f"  ✓ Kas Keluar entry removed", "PASS")
+                    else:
+                        self.log(f"  ✗ Kas Keluar entry still exists after cancellation", "FAIL")
+
+    def test_bonus_admin_history(self):
+        """Test Bonus Admin history endpoint."""
+        self.log("\n=== Testing Bonus Admin History ===", "INFO")
+        
+        success, history = self.test("Bonus Admin: Get history", "GET", "/bonus-admin/history", 200,
+                                    token=self.admin_token)
+        if success:
+            self.log(f"  Found {len(history)} history records", "INFO")
+            
+            # Check for expected action types
+            actions = set(h.get("action") for h in history)
+            expected_actions = {"bonus_settings", "bonus_paid", "bonus_unpaid"}
+            found_actions = actions & expected_actions
+            self.log(f"  Action types found: {found_actions}", "INFO")
+
     def run_all_tests(self):
         """Run all tests."""
         self.log("\n" + "="*60, "INFO")
@@ -662,6 +933,13 @@ class APITester:
         
         # Backup tests
         self.test_backup()
+        
+        # Bonus Admin tests
+        self.test_bonus_admin_auth()
+        self.test_bonus_admin_get()
+        self.test_bonus_admin_settings()
+        self.test_bonus_admin_pay()
+        self.test_bonus_admin_history()
         
         # Regression tests
         self.test_regression_auth()

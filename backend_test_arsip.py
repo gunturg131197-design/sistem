@@ -8,7 +8,7 @@ import json
 from typing import Dict, Any, Optional
 
 # Base URL from frontend/.env
-BASE_URL = "https://theme-logo-studio.preview.emergentagent.com/api"
+BASE_URL = "https://admin-bonus-unit.preview.emergentagent.com/api"
 
 # Test credentials
 ADMIN_CREDS = {"username": "admin", "password": "admin123"}

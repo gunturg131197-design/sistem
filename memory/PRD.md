@@ -82,3 +82,8 @@ Aplikasi sistem pelaporan untuk alat berat excavator. Fields: unit excavator, no
 - Endpoint: /api/wa/connection, /api/wa/cloud/{check,send-test,register,subscribe}, /api/wa/outbox(+retry), cron /api/cron/wa-outbox-retry (*/30)
 - UI: tab Koneksi WhatsApp (checklist, alat uji, panduan 8 langkah), tab Pesan Keluar; halaman publik /kebijakan-privasi
 - Panduan: /app/memory/PANDUAN_WHATSAPP.md. User: Business Portfolio belum ada; nomor masih aktif di app WA (harus dihapus akun / nomor baru); nomor pemilik 6282343070023
+
+## Update — Bonus Admin per 300 Jam (2026-10)
+- Menu "Bonus Admin" (/bonus-admin, admin only): tiap unit mencapai kelipatan 300 jam kerja (total_jam Ops Report) → bonus Rp500.000 ke admin unit; sisa jam dibawa ke bonus berikutnya.
+- Backend backend/bonus.py: GET /api/bonus-admin?year=, GET/PUT /api/bonus-admin/settings (enabled, jam_per_bonus, nominal, default_admin, start_date, unit_admins), POST /api/bonus-admin/pay (→ Kas Keluar KK-TTP otomatis, source=bonus_admin), DELETE /api/bonus-admin/pay/{id} (hapus KK), GET /api/bonus-admin/history (audit). Unique index cegah bayar ganda.
+- UI: stat cards, progress bar ke bonus berikutnya, filter (Belum Dibayar / Hampir Tercapai), rincian per kelipatan + Tandai Dibayar / Batalkan, Pengaturan, Riwayat, export PDF berkop & Excel.
