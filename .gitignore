@@ -99,3 +99,4 @@ frontend/node_modules/.cache/default-development/11.pack
 # MariaDB lokal preview
 .mariadb_data/
 .tmp_inv/
+!.env.example

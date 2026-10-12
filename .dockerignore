@@ -1,0 +1,66 @@
+# ---- VCS / editor ----
+.git
+.gitignore
+.gitattributes
+.github
+.vscode
+.idea
+*.swp
+.DS_Store
+
+# ---- Rahasia: JANGAN masuk image (isi lewat Environment Variables Coolify) ----
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+*.pem
+*.key
+
+# ---- Node / build frontend ----
+**/node_modules
+frontend/build
+frontend/dist
+**/.cache
+**/coverage
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ---- Python ----
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.venv
+**/venv
+*.egg-info
+
+# ---- Data lokal / backup / log ----
+.mariadb_data
+.tmp_inv
+backups
+**/backups
+*.log
+*.gz
+*.sql
+
+# ---- Tidak dibutuhkan di image produksi ----
+.emergent
+memory
+test_reports
+tests
+docs
+mongodb
+mariadb
+scripts/preview_mariadb.sh
+backend_test*.py
+backend_*_test.py
+test_result.md
+image_testing.md
+design_guidelines.*
+plan.md
+docker-compose*.yml
+DEPLOY_COOLIFY.md
+README.md
