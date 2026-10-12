@@ -736,3 +736,159 @@ export async function exportHourMeterDocx(reports, metaOrFn, filename) {
   const blob = await Packer.toBlob(doc);
   saveAs(blob, `${filename}.docx`);
 }
+
+// =====================================================================
+//  FORM REKAP BULANAN EXCAVATOR (A3 landscape, 1 baris per unit)
+// =====================================================================
+export const REKAP_HEAD = ["No", "Alat Excavator", "Nomor Lambung", "Serial Number", "Lokasi Kerja", "Status", "HM Awal", "Tanggal HM Awal", "HM Akhir", "Tanggal HM Akhir", "Tanggal Perpanjang Cars", "Keterangan"];
+const REKAP_MIN_ROWS = 30;
+
+export function buildRekapRows(reports) {
+  return reports.map((r, i) => [
+    String(i + 1),
+    [r.unit_name, r.merek_type].filter(Boolean).join(" · "),
+    dash(r.nomor_lambung),
+    dash(r.serial_number),
+    dash(r.lokasi_proyek),
+    dash(r.status || "Aktif"),
+    r.tgl_hm_awal ? fmtNum(r.hm_awal) : "-",
+    fmtDate(r.tgl_hm_awal),
+    r.tgl_hm_akhir ? fmtNum(r.hm_akhir) : "-",
+    fmtDate(r.tgl_hm_akhir),
+    fmtDate(r.tgl_perpanjang_cars),
+    (r.keterangan_tambahan || "").split("\n")[0] || "",
+  ]);
+}
+
+const padNumbered = (rows, min, cols) => {
+  const out = [...rows];
+  while (out.length < min) { const row = Array(cols).fill(""); row[0] = String(out.length + 1); out.push(row); }
+  return out;
+};
+
+function rekapPDF(reports, meta, filename) {
+  const W = 420, H = 297, mx = 12;
+  const hh = W * LH_HEADER_RATIO * 0.62, fh = W * LH_FOOTER_RATIO * 0.62; // kop diskalakan agar ruang tabel cukup
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a3" });
+  const kop = () => {
+    doc.addImage(LH_HEADER, "JPEG", 0, 0, W, W * LH_HEADER_RATIO * 0.62 > hh ? hh : hh);
+    doc.addImage(LH_FOOTER, "JPEG", 0, H - fh, W, fh);
+  };
+  kop();
+  let y = hh + 8;
+  doc.setFont("times", "bold"); doc.setFontSize(16); doc.setTextColor(...NAVY);
+  doc.text("FORM REKAP BULANAN EXCAVATOR", W / 2, y, { align: "center" });
+  doc.setDrawColor(...YELLOW); doc.setLineWidth(1); doc.line(W / 2 - 50, y + 2.2, W / 2 + 50, y + 2.2);
+  doc.setFont("times", "normal"); doc.setFontSize(10); doc.setTextColor(60, 60, 60);
+  doc.text([`Perusahaan: ${COMPANY.legalName}`, `Periode: ${meta.periodeLabel}`, meta.nomor ? `Nomor: ${meta.nomor}` : null].filter(Boolean).join("     ·     "), W / 2, y + 8, { align: "center" });
+  y += 12;
+  const rows = buildRekapRows(reports);
+  const fit = Math.floor((H - fh - 40 - y - 10) / 6.2);
+  autoTable(doc, {
+    startY: y,
+    margin: { top: hh + 8, bottom: fh + 8, left: mx, right: mx },
+    theme: "grid",
+    head: [REKAP_HEAD],
+    body: rows.length >= fit ? rows : padNumbered(rows, Math.min(REKAP_MIN_ROWS, fit), 12),
+    styles: { font: "times", fontSize: 9, cellPadding: 1.5, lineColor: [150, 160, 170], lineWidth: 0.2, textColor: [20, 20, 20], minCellHeight: 6 },
+    headStyles: { fillColor: NAVY, textColor: 255, fontStyle: "bold", halign: "center", valign: "middle" },
+    columnStyles: { 0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 48 }, 2: { cellWidth: 26, halign: "center" }, 3: { cellWidth: 32 }, 4: { cellWidth: 34 }, 5: { cellWidth: 24, halign: "center" }, 6: { cellWidth: 22, halign: "right" }, 7: { cellWidth: 26, halign: "center" }, 8: { cellWidth: 22, halign: "right" }, 9: { cellWidth: 26, halign: "center" }, 10: { cellWidth: 30, halign: "center" } },
+    didParseCell: (d) => {
+      if (d.section === "body" && d.column.index === 5) {
+        const v = String(d.cell.raw || "");
+        if (v === "Breakdown") { d.cell.styles.textColor = [200, 30, 20]; d.cell.styles.fontStyle = "bold"; }
+        else if (v === "Servis") { d.cell.styles.textColor = [180, 110, 0]; d.cell.styles.fontStyle = "bold"; }
+      }
+    },
+    didDrawPage: () => kop(),
+  });
+  let ty = doc.lastAutoTable.finalY + 8;
+  if (ty + 34 > H - fh) { doc.addPage(); kop(); ty = hh + 12; }
+  doc.setFont("times", "normal"); doc.setFontSize(10); doc.setTextColor(20, 20, 20);
+  doc.text(`Dicetak: ${fmtDateLong(new Date())}`, W - mx, ty, { align: "right" });
+  [["Dibuat oleh,", "Admin"], ["Mengetahui,", "Pimpinan"]].forEach(([a, b], i) => {
+    const cx = i === 0 ? W - mx - 130 : W - mx - 40;
+    doc.setFont("times", "normal"); doc.text(a, cx, ty + 6, { align: "center" });
+    doc.setFont("times", "bold"); doc.text(b, cx, ty + 11, { align: "center" });
+    doc.setLineWidth(0.3); doc.setDrawColor(60, 60, 60); doc.line(cx - 28, ty + 30, cx + 28, ty + 30);
+  });
+  doc.save(`${filename}.pdf`);
+}
+
+async function rekapExcel(reports, meta, filename) {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = COMPANY.legalName;
+  const ws = wb.addWorksheet("Rekap Bulanan", {
+    pageSetup: { paperSize: 8, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.3, right: 0.3, top: 0.3, bottom: 0.3, header: 0, footer: 0 } },
+    views: [{ showGridLines: false }],
+  });
+  const widths = [6, 30, 16, 20, 22, 14, 12, 15, 12, 15, 18, 36];
+  ws.columns = widths.map((w) => ({ width: w }));
+  const totalPx = widths.reduce((a, b) => a + b, 0) * 7.2;
+  const imgH = wb.addImage({ base64: LH_HEADER, extension: "jpeg" });
+  const imgF = wb.addImage({ base64: LH_FOOTER, extension: "jpeg" });
+  ws.addImage(imgH, { tl: { col: 0, row: 0 }, ext: { width: totalPx, height: totalPx * LH_HEADER_RATIO * 0.62 } });
+  for (let r = 1; r <= 6; r++) ws.getRow(r).height = 18;
+  let row = 8;
+  xlPut(ws, row, 1, 12, "FORM REKAP BULANAN EXCAVATOR", { bold: true, size: 16, align: "center", color: XL_NAVY, border: false }); ws.getRow(row).height = 24; row++;
+  xlPut(ws, row, 1, 12, [`Perusahaan: ${COMPANY.legalName}`, `Periode: ${meta.periodeLabel}`, meta.nomor ? `Nomor: ${meta.nomor}` : null].filter(Boolean).join("   ·   "), { align: "center", italic: true, border: false });
+  row += 2;
+  const put = (vals, opts) => {
+    vals.forEach((v, i) => xlCell(ws, ws.getCell(row, i + 1).address, v, { ...opts, align: opts.head ? "center" : ([0, 2, 5, 7, 9, 10].includes(i) ? "center" : [6, 8].includes(i) ? "right" : "left") }));
+    ws.getRow(row).height = opts.head ? 30 : 18; row++;
+  };
+  put(REKAP_HEAD, { bold: true, color: "FFFFFFFF", fill: XL_NAVY, head: true });
+  padNumbered(buildRekapRows(reports), REKAP_MIN_ROWS, 12).forEach((r) => put(r, {}));
+  row += 1;
+  xlPut(ws, row, 10, 12, `Dicetak: ${fmtDateLong(new Date())}`, { border: false, align: "right", italic: true }); row++;
+  xlPut(ws, row, 8, 9, "Dibuat oleh,", { border: false, align: "center" }); xlPut(ws, row, 11, 12, "Mengetahui,", { border: false, align: "center" }); row++;
+  xlPut(ws, row, 8, 9, "Admin", { border: false, align: "center", bold: true }); xlPut(ws, row, 11, 12, "Pimpinan", { border: false, align: "center", bold: true });
+  row += 4;
+  for (const c of [8, 9, 11, 12]) ws.getCell(row, c).border = { top: thin };
+  row += 2;
+  ws.addImage(imgF, { tl: { col: 0, row }, ext: { width: totalPx, height: totalPx * LH_FOOTER_RATIO * 0.62 } });
+  const buf = await wb.xlsx.writeBuffer();
+  saveAs(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `${filename}.xlsx`);
+}
+
+async function rekapDocx(reports, meta, filename) {
+  const PW_TW = 23811, PH_TW = 16838; // A3 landscape
+  const PWPX = 1587, PHPX = 1123;
+  const hH = Math.round(PWPX * LH_HEADER_RATIO * 0.62), fH = Math.round(PWPX * LH_FOOTER_RATIO * 0.62);
+  const mg = 800, content = PW_TW - mg * 2;
+  const img = (data, h, v) => new ImageRun({
+    type: "jpg", data, transformation: { width: PWPX, height: h },
+    floating: { horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, offset: 0 }, verticalPosition: { relative: VerticalPositionRelativeFrom.PAGE, offset: v * EMU_PX }, wrap: { type: TextWrappingType.NONE }, behindDocument: true, allowOverlap: true },
+  });
+  const rel = [6, 30, 16, 20, 22, 14, 12, 15, 12, 15, 18, 36];
+  const sum = rel.reduce((a, b) => a + b, 0);
+  const widths = rel.map((w) => Math.floor((w / sum) * content));
+  const A = AlignmentType;
+  const al = [A.CENTER, A.LEFT, A.CENTER, A.LEFT, A.LEFT, A.CENTER, A.RIGHT, A.CENTER, A.RIGHT, A.CENTER, A.CENTER, A.LEFT];
+  const children = [
+    new Paragraph({ alignment: A.CENTER, spacing: { after: 40 }, border: { bottom: { style: BorderStyle.SINGLE, size: 12, color: W_YELLOW, space: 2 } }, children: [wRun("FORM REKAP BULANAN EXCAVATOR", { bold: true, size: 32, color: W_NAVY })] }),
+    wPara([`Perusahaan: ${COMPANY.legalName}`, `Periode: ${meta.periodeLabel}`, meta.nomor ? `Nomor: ${meta.nomor}` : null].filter(Boolean).join("   ·   "), { align: A.CENTER, italic: true, before: 60, after: 160 }),
+    wTable(widths, REKAP_HEAD, padNumbered(buildRekapRows(reports), REKAP_MIN_ROWS, 12), al),
+    wPara(`Dicetak: ${fmtDateLong(new Date())}`, { align: A.RIGHT, italic: true, before: 240, after: 80 }),
+    wPara("Dibuat oleh, Admin                                                  Mengetahui, Pimpinan", { align: A.RIGHT, bold: true, after: 900 }),
+    wPara("(..............................)                                    (..............................)", { align: A.RIGHT }),
+  ];
+  const doc = new Document({
+    creator: COMPANY.legalName,
+    title: "Form Rekap Bulanan Excavator",
+    styles: { default: { document: { run: { font: "Times New Roman", size: 20 } } } },
+    sections: [{
+      properties: { page: { size: { width: PW_TW, height: PH_TW }, margin: { top: Math.round((hH + 20) * 15), bottom: Math.round((fH + 16) * 15), left: mg, right: mg, header: 0, footer: 0 } } },
+      headers: { default: new Header({ children: [new Paragraph({ children: [img(b64ToBytes(LH_HEADER), hH, 0)] })] }) },
+      footers: { default: new Footer({ children: [new Paragraph({ children: [img(b64ToBytes(LH_FOOTER), fH, PHPX - fH)] })] }) },
+      children,
+    }],
+  });
+  saveAs(await Packer.toBlob(doc), `${filename}.docx`);
+}
+
+export async function exportRekapBulanan(reports, meta, fmt, filename) {
+  if (fmt === "pdf") return rekapPDF(reports, meta, filename);
+  if (fmt === "xlsx") return rekapExcel(reports, meta, filename);
+  return rekapDocx(reports, meta, filename);
+}

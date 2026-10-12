@@ -68,3 +68,18 @@ export function CurrencyInput({ value, onChange, className = "", ...props }) {
     />
   );
 }
+
+export const UNIT_STATUSES = ["Aktif", "Standby", "Breakdown", "Servis", "Selesai Sewa"];
+const STATUS_CLS = {
+  Aktif: "border-emerald-500/60 text-emerald-400",
+  Standby: "border-sky-400/60 text-sky-300",
+  Breakdown: "bg-accent border-accent text-accent-foreground",
+  Servis: "border-primary/70 text-primary",
+  "Selesai Sewa": "border-border text-muted-foreground",
+};
+export function StatusBadge({ status, className = "", testid }) {
+  const s = status || "Aktif";
+  return (
+    <span data-testid={testid} className={`inline-block font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 border ${STATUS_CLS[s] || STATUS_CLS["Selesai Sewa"]} ${className}`}>{s}</span>
+  );
+}

@@ -12,6 +12,7 @@ import SparepartsPage from "@/pages/SparepartsPage";
 import ReportsPage from "@/pages/ReportsPage";
 import UsersPage from "@/pages/UsersPage";
 import PengurusPage from "@/pages/PengurusPage";
+import FinancePage from "@/pages/FinancePage";
 import AppShell from "@/components/AppShell";
 import "@/App.css";
 
@@ -48,6 +49,7 @@ function AppRouter() {
       <Route path="/spareparts" element={<ProtectedRoute><SparepartsPage /></ProtectedRoute>} />
       <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
       <Route path="/pengurus" element={<ProtectedRoute><PengurusPage /></ProtectedRoute>} />
+      <Route path="/finance" element={<ProtectedRoute adminOnly><FinancePage /></ProtectedRoute>} />
       <Route path="/users" element={<ProtectedRoute adminOnly><UsersPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

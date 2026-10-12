@@ -12,6 +12,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
+from finance import build_finance_router, sync_kas_sparepart, sync_kas_payroll, unsync_kas
 
 
 ROOT_DIR = Path(__file__).parent
@@ -74,6 +75,7 @@ class Unit(BaseModel):
     pengawas_lapangan: Optional[str] = ""
     merek_type: Optional[str] = ""
     pemilik_alat: Optional[str] = ""
+    status: Optional[str] = "Aktif"  # Aktif | Standby | Breakdown | Servis | Selesai Sewa
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -89,6 +91,7 @@ class UnitCreate(BaseModel):
     pengawas_lapangan: Optional[str] = ""
     merek_type: Optional[str] = ""
     pemilik_alat: Optional[str] = ""
+    status: Optional[str] = "Aktif"
 
 
 class Operation(BaseModel):
@@ -805,12 +808,17 @@ async def create_payroll(body: PayrollCreate, admin: User = Depends(require_admi
     doc = payroll.model_dump()
     doc["created_at"] = doc["created_at"].isoformat()
     await db.payroll.insert_one(doc)
+    try:
+        await sync_kas_payroll(db, {**doc})
+    except Exception as e:  # jangan gagalkan payroll bila sinkron kas gagal
+        logging.getLogger(__name__).error(f"sync kas payroll gagal: {e}")
     return payroll
 
 
 @api_router.delete("/payroll/{pid}")
 async def delete_payroll(pid: str, admin: User = Depends(require_admin)):
     await db.payroll.delete_one({"id": pid})
+    await unsync_kas(db, "payroll", pid)
     return {"ok": True}
 
 
@@ -857,12 +865,17 @@ async def create_sparepart(body: SparepartCreate, admin: User = Depends(require_
     doc = sp.model_dump()
     doc["created_at"] = doc["created_at"].isoformat()
     await db.spareparts.insert_one(doc)
+    try:
+        await sync_kas_sparepart(db, {**doc})
+    except Exception as e:
+        logging.getLogger(__name__).error(f"sync kas sparepart gagal: {e}")
     return sp
 
 
 @api_router.delete("/spareparts/{sid}")
 async def delete_sparepart(sid: str, admin: User = Depends(require_admin)):
     await db.spareparts.delete_one({"id": sid})
+    await unsync_kas(db, "sparepart", sid)
     return {"ok": True}
 
 
@@ -1068,6 +1081,10 @@ async def reports_units(periode: Optional[str] = None, user: User = Depends(get_
             for o in ops_sorted if (o.get("catatan_operator") or "").strip()
         ]
         extras = extras_map.get(_extras_key(uid, periode)) or {}
+        tgl_hm_awal = ops_sorted[0].get("tanggal", "") if ops_sorted else ""
+        tgl_hm_akhir = ops_sorted[-1].get("tanggal", "") if ops_sorted else ""
+        cars_dates = [o.get("tanggal", "") for o in ops_sorted if (o.get("jumlah_cars") or 0) > 0]
+        tgl_perpanjang_cars = cars_dates[-1] if cars_dates else ""
 
         reports.append({
             "unit_id": uid,
@@ -1078,6 +1095,10 @@ async def reports_units(periode: Optional[str] = None, user: User = Depends(get_
             "lokasi_proyek": u.get("lokasi_proyek", "") or "",
             "pengawas_lapangan": u.get("pengawas_lapangan", "") or "",
             "pengurus": u.get("pengurus", "") or "",
+            "status": u.get("status") or "Aktif",
+            "tgl_hm_awal": tgl_hm_awal,
+            "tgl_hm_akhir": tgl_hm_akhir,
+            "tgl_perpanjang_cars": tgl_perpanjang_cars,
             "total_downtime": total_downtime,
             "total_solar": total_solar,
             "hari_operasional": hari_operasional,
@@ -1109,6 +1130,7 @@ async def reports_units(periode: Optional[str] = None, user: User = Depends(get_
 
 
 app.include_router(api_router)
+app.include_router(build_finance_router(db, require_admin))
 
 app.add_middleware(
     CORSMiddleware,
@@ -1155,6 +1177,24 @@ async def _bootstrap_admin():
         logger.info(f"[bootstrap] Admin awal dibuat: username='{username}'")
     except Exception as e:
         logger.error(f"[bootstrap] Gagal membuat admin awal: {e}")
+
+
+@app.on_event("startup")
+async def _backfill_kas_keluar():
+    """Catat nota sparepart & payroll lama yang belum masuk Kas Keluar (idempoten)."""
+    try:
+        linked_sp = set(await db.kas_keluar.distinct("source_id", {"source": "sparepart"}))
+        for sp in await db.spareparts.find({}, {"_id": 0}).sort("tanggal", 1).to_list(20000):
+            if sp["id"] not in linked_sp:
+                await sync_kas_sparepart(db, sp)
+        linked_p = set(await db.kas_keluar.distinct("source_id", {"source": "payroll"}))
+        for p in await db.payroll.find({}, {"_id": 0}).sort("created_at", 1).to_list(20000):
+            if p["id"] not in linked_p:
+                if not isinstance(p.get("created_at"), str):
+                    p["created_at"] = (p.get("created_at") or datetime.now(timezone.utc)).isoformat()
+                await sync_kas_payroll(db, p)
+    except Exception as e:
+        logger.error(f"[backfill kas] gagal: {e}")
 
 
 @app.on_event("shutdown")

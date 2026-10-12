@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import api from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { PageHeader } from "@/components/common";
+import { PageHeader, StatusBadge, UNIT_STATUSES } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +16,7 @@ import PengurusCombobox from "@/components/PengurusCombobox";
 
 const empty = {
   unit_name: "", nomor_lambung: "", serial_number: "", operator_id: "", operator_name: "", pengurus: "",
-  merek_type: "", pemilik_alat: "", nama_proyek: "", lokasi_proyek: "", pengawas_lapangan: "",
+  merek_type: "", pemilik_alat: "", nama_proyek: "", lokasi_proyek: "", pengawas_lapangan: "", status: "Aktif",
 };
 const FIELD_KEYS = Object.keys(empty);
 
@@ -88,6 +88,7 @@ export default function UnitsPage() {
     Operator: u.operator_name || "-",
     Pengurus: u.pengurus || "-",
     "Merek / Type": u.merek_type || "-",
+    Status: u.status || "Aktif",
     "Pemilik Alat": u.pemilik_alat || "-",
     "Nama Proyek": u.nama_proyek || "-",
     "Lokasi Proyek": u.lokasi_proyek || "-",
@@ -139,7 +140,15 @@ export default function UnitsPage() {
                     <Field label="Serial Number *">
                       <Input data-testid="input-serial" className="rounded-sm mt-1.5" placeholder="SN-XXXX" value={form.serial_number} onChange={e => setForm({ ...form, serial_number: e.target.value })} />
                     </Field>
-                    <Field label="Pemilik Alat" full>
+                    <Field label="Status Unit">
+                      <Select value={form.status || "Aktif"} onValueChange={(v) => setForm({ ...form, status: v })}>
+                        <SelectTrigger data-testid="select-unit-status" className="rounded-sm mt-1.5"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {UNIT_STATUSES.map(st => <SelectItem key={st} value={st} data-testid={`unit-status-option-${st.replace(/\s+/g, "-").toLowerCase()}`}>{st}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Pemilik Alat">
                       <Input data-testid="input-pemilik-alat" className="rounded-sm mt-1.5" placeholder="CV. Trirara Tunggal Putra / nama pemilik" value={form.pemilik_alat} onChange={e => setForm({ ...form, pemilik_alat: e.target.value })} />
                     </Field>
 
@@ -192,6 +201,7 @@ export default function UnitsPage() {
             <tr className="text-left font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
               <th className="p-3">Unit</th>
               <th className="p-3">Merek / Type</th>
+              <th className="p-3">Status</th>
               <th className="p-3">Nomor Lambung</th>
               <th className="p-3">Serial Number</th>
               <th className="p-3">Operator</th>
@@ -202,12 +212,13 @@ export default function UnitsPage() {
           </thead>
           <tbody>
             {units.length === 0 && (
-              <tr><td colSpan={8} className="p-8 text-center text-muted-foreground text-xs font-mono">// Belum ada unit terdaftar</td></tr>
+              <tr><td colSpan={9} className="p-8 text-center text-muted-foreground text-xs font-mono">// Belum ada unit terdaftar</td></tr>
             )}
             {units.map(u => (
               <tr key={u.id} className="border-t border-border hover:bg-secondary/30">
                 <td className="p-3 font-medium">{u.unit_name}</td>
                 <td className="p-3 text-muted-foreground">{u.merek_type || "—"}</td>
+                <td className="p-3"><StatusBadge status={u.status} testid={`unit-row-status-${u.id}`} /></td>
                 <td className="p-3 font-mono text-primary">{u.nomor_lambung}</td>
                 <td className="p-3 font-mono text-muted-foreground">{u.serial_number}</td>
                 <td className="p-3">{u.operator_name || <span className="text-muted-foreground">—</span>}</td>
@@ -223,7 +234,7 @@ export default function UnitsPage() {
                 {isAdmin && (
                   <td className="p-3 text-right">
                     <div className="inline-flex gap-1">
-                      <button data-testid={`edit-unit-${u.id}`} onClick={() => { setForm(Object.fromEntries(FIELD_KEYS.map(k => [k, u[k] || ""]))); setEditId(u.id); setOpen(true); }} className="p-1.5 border border-border hover:border-primary hover:text-primary">
+                      <button data-testid={`edit-unit-${u.id}`} onClick={() => { setForm({ ...Object.fromEntries(FIELD_KEYS.map(k => [k, u[k] || ""])), status: u.status || "Aktif" }); setEditId(u.id); setOpen(true); }} className="p-1.5 border border-border hover:border-primary hover:text-primary">
                         <PencilSimpleIcon size={14} weight="bold" />
                       </button>
                       <button data-testid={`delete-unit-${u.id}`} onClick={() => del(u.id)} className="p-1.5 border border-border hover:border-accent hover:text-accent">

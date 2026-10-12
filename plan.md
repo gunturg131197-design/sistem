@@ -115,3 +115,11 @@
 - Export **Hour Meter** berhasil untuk **PDF + Excel + Word** dengan struktur section sesuai docx.
 - Nomor laporan LP/TTP otomatis tercantum pada export dan arsip nomor tetap berjalan.
 - Semua halaman existing lulus smoke test (CRUD + export lama + dashboard).
+---
+## Phase 4 — Keuangan & Rekap Bulanan Excavator (Status: COMPLETED)
+User choices: (a) Keuangan dulu, (b) Rekap Bulanan di halaman Laporan (tab), (c) Surat Keluar dibuat sekarang.
+- [x] Route `/finance` (admin only) + menu sidebar "Keuangan"
+- [x] FinancePage: Dashboard, Kas Masuk (KM-TTP-xxx), Kas Keluar (BK/KK-TTP-xxx, auto dari Sparepart & Payroll), Invoice (INV/TTP/xxx/romawi/tahun), Surat Masuk, Surat Keluar (SP/TTP/xxx/romawi/tahun mulai 201), Rekap Bulanan + export Excel/PDF
+- [x] Edit tanggal Surat Keluar/Invoice -> bulan romawi & tahun nomor ikut diperbarui (urut tetap)
+- [x] Laporan: tab "Rekap Bulanan Excavator" (tabel 12 kolom sesuai form PDF) + export PDF A3/Excel/Word
+- [x] Testing agent iteration_3: backend 36/36, frontend 100%

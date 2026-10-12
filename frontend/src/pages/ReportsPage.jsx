@@ -14,7 +14,9 @@ import {
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { exportToExcelMultiSheet, exportToPDF } from "@/lib/exporters";
-import { exportHourMeterPDF, exportHourMeterExcel, exportHourMeterDocx, KONDISI_ITEMS } from "@/lib/hourMeter";
+import { exportHourMeterPDF, exportHourMeterExcel, exportHourMeterDocx, exportRekapBulanan, KONDISI_ITEMS, fmtDate, REKAP_HEAD, buildRekapRows } from "@/lib/hourMeter";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { StatusBadge } from "@/components/common";
 
 const BULAN_ID = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 const ITEM_CLS = "cursor-pointer focus:bg-secondary focus:text-foreground";
@@ -38,6 +40,7 @@ export default function ReportsPage() {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [busy, setBusy] = useState("");
   const [extrasFor, setExtrasFor] = useState(null);
+  const [view, setView] = useState("unit");
   const [extras, setExtras] = useState({ pengembalian_jam: "", lain_lain: "", keterangan_tambahan: "" });
 
   const loadArchive = async () => {
@@ -97,6 +100,18 @@ export default function ReportsPage() {
 
   const unitHM = (r, fmt) => runHourMeter([r], fmt, { key: r.unit_id, jenis: "unit", unit_label: r.unit_label, fileTag: slug(`${r.unit_name}-${r.nomor_lambung}`) });
   const allHM = (fmt) => runHourMeter(reports, fmt, { key: "all", jenis: "semua", fileTag: "Semua-Unit" });
+
+  // ---- Form Rekap Bulanan Excavator (A3 landscape) ----
+  const rekapBulanan = async (fmt) => {
+    if (!reports.length) { toast.error("Tidak ada unit"); return; }
+    setBusy(`rekap-${fmt}`);
+    try {
+      const nomor = await issueNomor({ jenis: "semua" });
+      await exportRekapBulanan(reports, { nomor, periodeLabel: periodeLabel() }, fmt, `Rekap-Bulanan-Excavator_${periodSlug}`);
+      toast.success(`Rekap Bulanan ${fmt === "pdf" ? "PDF" : fmt === "xlsx" ? "Excel" : "Word"} diunduh · ${nomor}`);
+    } catch (e) { console.error(e); toast.error("Gagal membuat rekap bulanan"); }
+    finally { setBusy(""); }
+  };
 
   // ---- Rekap ringkas semua unit ----
   const rekapPDF = async () => {
@@ -215,16 +230,19 @@ export default function ReportsPage() {
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button data-testid="export-all-menu" variant="outline" className="rounded-sm border-border hover:border-primary hover:text-primary">
-                  <FileXlsIcon size={16} weight="bold" className="mr-2" /> Rekap Ringkas <CaretDownIcon size={12} weight="bold" className="ml-1.5" />
+                <Button data-testid="export-all-menu" variant="outline" disabled={busy.startsWith("rekap")} className="rounded-sm border-border hover:border-primary hover:text-primary">
+                  <FileXlsIcon size={16} weight="bold" className="mr-2" /> {busy.startsWith("rekap") ? "Membuat…" : "Rekap Bulanan"} <CaretDownIcon size={12} weight="bold" className="ml-1.5" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="rounded-sm border-border bg-popover w-56">
-                <DropdownMenuLabel className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Tabel Rekap Semua Unit</DropdownMenuLabel>
-                <DropdownMenuItem data-testid="export-pdf-all" className={ITEM_CLS} onClick={rekapPDF}><FilePdfIcon size={16} weight="bold" className="text-accent" /> Rekap PDF</DropdownMenuItem>
-                <DropdownMenuItem data-testid="export-excel-all" className={ITEM_CLS} onClick={rekapExcel}><FileXlsIcon size={16} weight="bold" className="text-emerald-400" /> Rekap Excel</DropdownMenuItem>
+              <DropdownMenuContent align="end" className="rounded-sm border-border bg-popover w-64">
+                <DropdownMenuLabel className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Form Rekap Bulanan Excavator</DropdownMenuLabel>
+                <DropdownMenuItem data-testid="rekap-bulanan-pdf" className={ITEM_CLS} onClick={() => rekapBulanan("pdf")}><FilePdfIcon size={16} weight="bold" className="text-accent" /> PDF (A3 landscape)</DropdownMenuItem>
+                <DropdownMenuItem data-testid="rekap-bulanan-excel" className={ITEM_CLS} onClick={() => rekapBulanan("xlsx")}><FileXlsIcon size={16} weight="bold" className="text-emerald-400" /> Excel (.xlsx)</DropdownMenuItem>
+                <DropdownMenuItem data-testid="rekap-bulanan-word" className={ITEM_CLS} onClick={() => rekapBulanan("docx")}><FileDocIcon size={16} weight="bold" className="text-sky-400" /> Word (.docx)</DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <p className="px-2 py-1.5 text-[10px] font-mono text-muted-foreground">Untuk form Hour Meter semua unit gunakan tombol kuning.</p>
+                <DropdownMenuLabel className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Tabel Ringkas (biaya)</DropdownMenuLabel>
+                <DropdownMenuItem data-testid="export-pdf-all" className={ITEM_CLS} onClick={rekapPDF}><FilePdfIcon size={16} weight="bold" className="text-accent" /> Ringkas PDF</DropdownMenuItem>
+                <DropdownMenuItem data-testid="export-excel-all" className={ITEM_CLS} onClick={rekapExcel}><FileXlsIcon size={16} weight="bold" className="text-emerald-400" /> Ringkas Excel</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -253,6 +271,60 @@ export default function ReportsPage() {
       {loading && <p className="font-mono text-xs text-muted-foreground">// Memuat laporan…</p>}
       {!loading && reports.length === 0 && <p className="font-mono text-xs text-muted-foreground border border-dashed border-border p-8 text-center">// Tidak ada data untuk periode ini</p>}
 
+      <Tabs value={view} onValueChange={setView}>
+        <TabsList className="h-auto rounded-sm bg-card border border-border p-1 mb-6 gap-1">
+          <TabsTrigger value="unit" data-testid="report-tab-unit" className="rounded-sm text-xs px-3 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Hour Meter per Unit</TabsTrigger>
+          <TabsTrigger value="rekap" data-testid="report-tab-rekap" className="rounded-sm text-xs px-3 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Rekap Bulanan Excavator</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="rekap">
+          <div className="border border-border bg-card" data-testid="rekap-bulanan-view">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 border-b border-border bg-muted">
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-primary">// Form Rekap Bulanan Excavator</p>
+                <h3 className="font-display font-black text-xl tracking-tighter">{periodeLabel()} · {reports.length} unit</h3>
+              </div>
+              <div className="flex gap-2">
+                <Button data-testid="rekap-view-pdf" size="sm" variant="outline" disabled={!!busy} onClick={() => rekapBulanan("pdf")} className="rounded-sm border-border hover:border-primary hover:text-primary"><FilePdfIcon size={14} weight="bold" className="mr-1.5" /> PDF</Button>
+                <Button data-testid="rekap-view-excel" size="sm" variant="outline" disabled={!!busy} onClick={() => rekapBulanan("xlsx")} className="rounded-sm border-border hover:border-primary hover:text-primary"><FileXlsIcon size={14} weight="bold" className="mr-1.5" /> Excel</Button>
+                <Button data-testid="rekap-view-word" size="sm" variant="outline" disabled={!!busy} onClick={() => rekapBulanan("docx")} className="rounded-sm border-border hover:border-primary hover:text-primary"><FileDocIcon size={14} weight="bold" className="mr-1.5" /> Word</Button>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm" data-testid="rekap-bulanan-table">
+                <thead className="bg-muted">
+                  <tr className="text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                    {REKAP_HEAD.map(h => <th key={h} className={`p-3 whitespace-nowrap ${h.startsWith("HM") ? "text-right" : ""}`}>{h}</th>)}
+                    {isAdmin && <th className="p-3" />}
+                  </tr>
+                </thead>
+                <tbody>
+                  {!loading && reports.length === 0 && <tr><td colSpan={13} className="p-8 text-center text-xs font-mono text-muted-foreground">// Belum ada unit</td></tr>}
+                  {buildRekapRows(reports).map((row, i) => {
+                    const r = reports[i];
+                    return (
+                      <tr key={r.unit_id} className="border-t border-border hover:bg-secondary/60" data-testid={`rekap-row-${r.unit_id}`}>
+                        {row.map((v, j) => (
+                          <td key={j} className={`p-3 ${j === 0 ? "font-mono text-muted-foreground" : ""} ${j === 2 ? "font-mono text-primary whitespace-nowrap" : ""} ${[6, 8].includes(j) ? "text-right font-mono" : ""} ${[7, 9, 10].includes(j) ? "font-mono whitespace-nowrap" : ""} ${j === 11 ? "text-muted-foreground min-w-[180px]" : ""}`}>
+                            {j === 5 ? <StatusBadge status={r.status} /> : (v || (j === 11 ? "—" : v))}
+                          </td>
+                        ))}
+                        {isAdmin && (
+                          <td className="p-3 text-right">
+                            <button data-testid={`rekap-ket-${r.unit_id}`} title="Ubah keterangan" onClick={() => openExtras(r)} className="p-1.5 border border-border hover:border-primary hover:text-primary"><NotePencilIcon size={14} weight="bold" /></button>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <p className="px-4 py-3 border-t border-border font-mono text-[10px] text-muted-foreground">HM Awal/Akhir & tanggal diambil otomatis dari Ops Report periode ini · Tanggal Perpanjang Cars = tanggal terakhir ada cars baru · Keterangan = baris pertama "Keterangan Tambahan".</p>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="unit">
       <div className="space-y-6" data-testid="reports-list">
         {reports.map((r) => {
           const bad = KONDISI_ITEMS.filter(([k]) => r.kondisi_alat?.[k]?.status === "tidak").map(([, l]) => l);
@@ -269,12 +341,15 @@ export default function ReportsPage() {
                   <div>
                     <p className="font-display font-black text-lg tracking-tighter">{r.unit_name} <span className="text-primary">· {r.nomor_lambung}</span>
                       {r.merek_type && <span className="ml-2 font-mono text-[10px] font-normal text-muted-foreground tracking-normal">{r.merek_type}</span>}
+                      <StatusBadge status={r.status} className="ml-2 align-middle" testid={`unit-status-${r.unit_id}`} />
                     </p>
                     <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground flex flex-wrap gap-x-3 gap-y-1 mt-0.5">
                       <span>SN {r.serial_number || "-"}</span>
                       <span>Operator: {(r.operators || []).join(", ") || r.operator_utama || "—"}</span>
                       {r.nama_proyek && <span className="flex items-center gap-1"><MapPinIcon size={11} weight="bold" />{r.nama_proyek}{r.lokasi_proyek ? ` · ${r.lokasi_proyek}` : ""}</span>}
                       {r.pengawas_lapangan && <span>Pengawas: {r.pengawas_lapangan}</span>}
+                      <span>HM: {fmtDate(r.tgl_hm_awal)} → {fmtDate(r.tgl_hm_akhir)}</span>
+                      <span className="text-primary">Perpanjang Cars: {fmtDate(r.tgl_perpanjang_cars)}</span>
                     </p>
                   </div>
                 </div>
@@ -316,6 +391,9 @@ export default function ReportsPage() {
           );
         })}
       </div>
+
+        </TabsContent>
+      </Tabs>
 
       {/* Dialog biaya & keterangan */}
       <Dialog open={!!extrasFor} onOpenChange={(v) => { if (!v) setExtrasFor(null); }}>
