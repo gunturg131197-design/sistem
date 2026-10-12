@@ -13,6 +13,7 @@ import {
   SignOutIcon,
   BankIcon,
   WhatsappLogoIcon,
+ LifebuoyIcon,
 } from "@phosphor-icons/react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +30,7 @@ const navItems = [
   { to: "/wa-inbox", label: "Kotak Masuk WA", icon: WhatsappLogoIcon, testid: "nav-wa-inbox", adminOnly: true },
   { to: "/pengurus", label: "Pengurus", icon: HardHatIcon, testid: "nav-pengurus" },
   { to: "/users", label: "Operators", icon: UsersThreeIcon, testid: "nav-users", adminOnly: true },
+  { to: "/bantuan", label: "Bantuan & Backup", icon: LifebuoyIcon, testid: "nav-help", adminOnly: true },
 ];
 
 export default function AppShell({ children }) {

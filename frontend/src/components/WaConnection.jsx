@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import {
   PlugsConnectedIcon, PlugsIcon, CopySimpleIcon, CheckCircleIcon, CircleIcon, WarningIcon, ArrowClockwiseIcon,
-  PaperPlaneTiltIcon, ShieldCheckIcon, CircleNotchIcon, ReceiptIcon, GaugeIcon, PhoneIcon, LinkIcon,
+  PaperPlaneTiltIcon, ShieldCheckIcon, CircleNotchIcon, ReceiptIcon, GaugeIcon, PhoneIcon, LinkIcon, ImageSquareIcon, ChatCircleDotsIcon,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
@@ -30,6 +30,50 @@ function Check({ ok, label, sub, testid }) {
       {ok ? <CheckCircleIcon size={18} weight="fill" className="text-emerald-400 shrink-0" /> : <CircleIcon size={18} className="text-muted-foreground shrink-0" />}
       <div><p className={`text-sm ${ok ? "text-foreground" : "text-muted-foreground"}`}>{label}</p>{sub && <p className="font-mono text-[10px] text-muted-foreground">{sub}</p>}</div>
     </li>
+  );
+}
+
+export function SimulateInbound() {
+  const [phone, setPhone] = useState("");
+  const [name, setName] = useState("");
+  const [text, setText] = useState("halo");
+  const [caption, setCaption] = useState("");
+  const [file, setFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const send = async () => {
+    if (!phone) { toast.error("Isi nomor pengirim"); return; }
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("phone", phone); fd.append("name", name);
+      if (file) { fd.append("file", file); fd.append("caption", caption); } else fd.append("text", text);
+      const { data } = await api.post("/wa/simulate/inbound", fd);
+      if (data.status === "duplicate") toast.info("Pesan dengan ID sama sudah pernah diterima (diabaikan)");
+      else if (data.type === "image") toast.success("Gambar simulasi diterima — cek tab Kotak Masuk (diproses AI)");
+      else toast.success(data.reply_deduped ? "Teks diterima · balasan panduan tidak dikirim ulang (maks 1x/hari)" : "Teks diterima · balasan panduan dicatat di Pesan Keluar (simulasi)");
+      setFile(null);
+    } catch (e) { toast.error(e?.response?.data?.detail || "Gagal"); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="border border-sky-400/40 bg-card p-5 space-y-2.5" data-testid="wa-simulate-card">
+      <p className={lbl}>// Simulasi Pesan Masuk (tanpa Meta)</p>
+      <p className="text-xs text-muted-foreground">Meniru pesan WhatsApp dari operator/pengurus melalui alur yang sama (anti-duplikat, AI, persetujuan otomatis, balasan). Tidak mengirim pesan sungguhan & tidak mengubah status koneksi.</p>
+      <div className="grid grid-cols-2 gap-2">
+        <Input data-testid="wa-sim-phone" className="rounded-sm font-mono" placeholder="No. pengirim" value={phone} onChange={(e) => setPhone(e.target.value)} />
+        <Input data-testid="wa-sim-name" className="rounded-sm" placeholder="Nama (opsional)" value={name} onChange={(e) => setName(e.target.value)} />
+      </div>
+      <label className="flex items-center gap-2 border border-dashed border-border p-2 text-xs cursor-pointer hover:border-primary transition-colors duration-150">
+        <ImageSquareIcon size={16} className="text-primary" />
+        <span className="truncate">{file ? file.name : "Lampirkan gambar (bukti transfer / foto HM) — opsional"}</span>
+        <input data-testid="wa-sim-file" type="file" accept="image/*" className="sr-only" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+      </label>
+      {file ? <Input data-testid="wa-sim-caption" className="rounded-sm" placeholder="Keterangan unit, mis. Sdlg 10" value={caption} onChange={(e) => setCaption(e.target.value)} />
+        : <Input data-testid="wa-sim-text" className="rounded-sm" placeholder="Isi pesan teks" value={text} onChange={(e) => setText(e.target.value)} />}
+      <Button data-testid="wa-sim-send" disabled={busy} onClick={send} variant="outline" className="w-full rounded-sm border-sky-400/60 text-sky-300 hover:bg-sky-400/10 hover:text-sky-200">
+        {busy ? <CircleNotchIcon size={14} className="mr-2 animate-spin" /> : <ChatCircleDotsIcon size={14} weight="bold" className="mr-2" />} Simulasikan Pesan Masuk
+      </Button>
+    </div>
   );
 }
 
@@ -133,6 +177,7 @@ export function ConnectionTab({ onChanged }) {
             {!st.waba_id_set && <p className="font-mono text-[10px] text-muted-foreground">Isi WHATSAPP_WABA_ID di Secrets untuk mengaktifkan.</p>}
           </div>
         </div>
+        <SimulateInbound />
       </div>
 
       <div className="xl:col-span-2 space-y-4">

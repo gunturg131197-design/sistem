@@ -3,6 +3,7 @@ import api from "@/lib/api";
 import { PageHeader, formatIDR, CurrencyInput } from "@/components/common";
 import PengurusCombobox from "@/components/PengurusCombobox";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,6 +17,7 @@ import {
 import { toast } from "sonner";
 import { AutomationTab, SummaryTab, AuditList } from "@/components/WaAutomation";
 import { ConnectionTab, OutboxTab, LEVEL } from "@/components/WaConnection";
+import { ReminderTab, WeeklyTab } from "@/components/WaReports";
 
 const lbl = "font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground";
 const STATUS = {
@@ -26,7 +28,7 @@ const STATUS = {
   rejected: ["Ditolak", "border-border text-muted-foreground"],
   error: ["Gagal", "border-accent text-accent"],
 };
-const FILTERS = [["pending", "Menunggu"], ["duplicate", "Duplikat"], ["processing", "Diproses"], ["approved", "Disetujui"], ["rejected", "Ditolak"], ["error", "Gagal"], ["all", "Semua"]];
+const FILTERS = [["pending", "Menunggu"], ["hm_flag", "HM Janggal"], ["duplicate", "Duplikat"], ["processing", "Diproses"], ["approved", "Disetujui"], ["rejected", "Ditolak"], ["error", "Gagal"], ["all", "Semua"]];
 const JENIS = { transfer: ["Bukti Transfer", ReceiptIcon], hour_meter: ["Laporan HM", GaugeIcon], lainnya: ["Lainnya", QuestionIcon] };
 const TIPE = [["operator", "Operator"], ["pengurus", "Pengurus"], ["klien", "Klien"], ["lainnya", "Lainnya"]];
 const fmtTime = (s) => (s ? new Date(s).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "-");
@@ -82,7 +84,7 @@ function InboxTab({ units, operators, pengurusOptions, onCounts }) {
   const load = async (quiet = false) => {
     if (!quiet) setLoading(true);
     try {
-      const [{ data }, st] = await Promise.all([api.get("/wa/inbox", { params: { status: filter === "pending" ? "pending,processing" : filter } }), api.get("/wa/status")]);
+      const [{ data }, st] = await Promise.all([api.get("/wa/inbox", { params: filter === "hm_flag" ? { status: "pending,duplicate", flag: "hm" } : { status: filter === "pending" ? "pending,processing" : filter } }), api.get("/wa/status")]);
       setItems(data); setCounts(st.data.counts || {}); onCounts && onCounts(st.data);
     } catch { if (!quiet) toast.error("Gagal memuat kotak masuk"); }
     finally { setLoading(false); }
@@ -134,6 +136,7 @@ function InboxTab({ units, operators, pengurusOptions, onCounts }) {
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider"><JI size={13} weight="bold" className="text-primary" /> {jl}</span>
                     <span className="flex items-center gap-1">
+                      {it.hm_flag && it.status !== "approved" && <span data-testid={`wa-item-hmflag-${it.id}`} className="font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 bg-accent/15 text-accent border border-accent/50">HM Janggal</span>}
                       {it.auto_approved && <span data-testid={`wa-item-auto-${it.id}`} className="font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 bg-emerald-500/15 text-emerald-400">Otomatis</span>}
                       <StatusPill status={it.status} testid={`wa-item-status-${it.id}`} />
                     </span>
@@ -216,6 +219,8 @@ function ReviewDialog({ item, units, operators, pengurusOptions, onClose, onChan
   const [d, setD] = useState({ ...(item.draft || {}) });
   const [busy, setBusy] = useState("");
   const [hist, setHist] = useState([]);
+  const [confirmHm, setConfirmHm] = useState(false);
+  const [needConfirm, setNeedConfirm] = useState("");
   useEffect(() => { api.get("/wa/audit", { params: { inbox_id: item.id } }).then(({ data }) => setHist(data)).catch(() => {}); }, [item.id]);
   const done = item.status === "approved";
   const locked = done || item.status === "processing";
@@ -231,16 +236,21 @@ function ReviewDialog({ item, units, operators, pengurusOptions, onClose, onChan
         const payload = { ...d };
         if (jenis === "hour_meter") { payload.hm_awal = payload.hm_awal === "" || payload.hm_awal === null ? null : Number(payload.hm_awal); payload.hm_akhir = Number(payload.hm_akhir || 0); payload.jumlah_cars = Number(payload.jumlah_cars || 0); }
         if (jenis === "transfer") payload.debit = Number(payload.debit || 0);
-        const { data } = await api.post(`/wa/inbox/${item.id}/approve`, { jenis, draft: payload });
-        toast.success(`Disetujui · ${data.result?.no || ""}${data.replied ? " · balasan WA terkirim" : ""}`);
+        const { data } = await api.post(`/wa/inbox/${item.id}/approve`, { jenis, draft: payload, confirm_anomaly: jenis === "hour_meter" && confirmHm });
+        toast.success(`Disetujui · ${data.result?.no || ""}${data.replied ? " · balasan WA terkirim" : data.reply_status === "simulated" ? " · balasan WA (simulasi)" : ""}`);
       } else if (kind === "reject") { await api.post(`/wa/inbox/${item.id}/reject`); toast.success("Ditolak"); }
       else if (kind === "reprocess") { await api.post(`/wa/inbox/${item.id}/reprocess`); toast.success("Diproses ulang oleh AI"); }
       else if (kind === "delete") { if (!window.confirm("Hapus pesan ini beserta gambarnya?")) { setBusy(""); return; } await api.delete(`/wa/inbox/${item.id}`); toast.success("Terhapus"); }
       onChanged();
-    } catch (e) { toast.error(e?.response?.data?.detail || "Gagal"); }
+    } catch (e) {
+      if (e?.response?.status === 409) { setNeedConfirm(String(e.response.data?.detail || "")); setConfirmHm(false); }
+      toast.error(e?.response?.data?.detail || "Gagal");
+    }
     finally { setBusy(""); }
   };
   const ai = item.ai || {};
+  const anomalies = item.hm_anomalies || [];
+  const showHmConfirm = !done && jenis === "hour_meter" && (anomalies.length > 0 || !!needConfirm);
   const t = ai.transfer || {};
 
   return (
@@ -262,6 +272,17 @@ function ReviewDialog({ item, units, operators, pengurusOptions, onClose, onChan
               </div>
             )}
             {item.status === "error" && <p className="text-sm text-accent border border-accent/50 p-3">{item.error}</p>}
+            {showHmConfirm && (
+              <div className="border border-accent/60 bg-accent/10 p-3 space-y-2" data-testid="wa-review-hm-anomalies">
+                <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-accent flex items-center gap-1.5"><WarningIcon size={13} weight="bold" /> HM Janggal · wajib diperiksa manual</p>
+                {anomalies.map((a, i) => <p key={i} className="text-xs" data-testid={`wa-hm-anomaly-${i}`}>• {a.pesan}</p>)}
+                {needConfirm && <p className="text-xs text-muted-foreground">{needConfirm}</p>}
+                <label className="flex items-start gap-2 text-xs cursor-pointer pt-1">
+                  <Checkbox data-testid="wa-confirm-anomaly" checked={confirmHm} onCheckedChange={(v) => setConfirmHm(!!v)} className="mt-0.5" />
+                  <span>Saya sudah memeriksa foto dan angka HM; data ini benar dan boleh disimpan.</span>
+                </label>
+              </div>
+            )}
             {item.auto_check && !done && item.auto_check.reasons?.length > 0 && (
               <div className="border border-border p-3 text-xs space-y-1" data-testid="wa-review-autocheck">
                 <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">Tidak disimpan otomatis karena · keyakinan AI {Math.round((item.auto_check.confidence || 0) * 100)}%</p>
@@ -332,7 +353,7 @@ function ReviewDialog({ item, units, operators, pengurusOptions, onClose, onChan
           {!done && (
             <div className="flex gap-2">
               <Button data-testid="wa-reject" variant="outline" disabled={!!busy || item.status === "rejected"} onClick={() => act("reject")} className="rounded-sm border-accent/60 text-accent hover:bg-accent/10 hover:text-accent"><XIcon size={14} weight="bold" className="mr-1.5" /> Tolak</Button>
-              <Button data-testid="wa-approve" disabled={!!busy || locked} onClick={() => act("approve")} className="rounded-sm bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground font-display tracking-tight">
+              <Button data-testid="wa-approve" disabled={!!busy || locked || (showHmConfirm && !confirmHm)} onClick={() => act("approve")} className="rounded-sm bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground font-display tracking-tight">
                 {busy === "approve" ? <CircleNotchIcon size={14} weight="bold" className="mr-1.5 animate-spin" /> : <CheckIcon size={14} weight="bold" className="mr-1.5" />} Setujui & Simpan
               </Button>
             </div>
@@ -438,11 +459,13 @@ export default function WhatsAppInboxPage() {
           </button>
         } />
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="h-auto rounded-sm bg-card border border-border p-1 mb-6 gap-1">
+        <TabsList className="h-auto flex flex-wrap justify-start rounded-sm bg-card border border-border p-1 mb-6 gap-1">
           <TabsTrigger value="inbox" data-testid="wa-tab-inbox" className="rounded-sm text-xs px-3 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Kotak Masuk{pending ? ` · ${pending}` : ""}</TabsTrigger>
           <TabsTrigger value="contacts" data-testid="wa-tab-contacts" className="rounded-sm text-xs px-3 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Kontak WA</TabsTrigger>
           <TabsTrigger value="automation" data-testid="wa-tab-automation" className="rounded-sm text-xs px-3 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Otomatisasi & Audit</TabsTrigger>
           <TabsTrigger value="summary" data-testid="wa-tab-summary" className="rounded-sm text-xs px-3 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Ringkasan Harian</TabsTrigger>
+          <TabsTrigger value="reminder" data-testid="wa-tab-reminder" className="rounded-sm text-xs px-3 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Pengingat Piutang</TabsTrigger>
+          <TabsTrigger value="weekly" data-testid="wa-tab-weekly" className="rounded-sm text-xs px-3 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Laporan Mingguan</TabsTrigger>
           <TabsTrigger value="outbox" data-testid="wa-tab-outbox" className="rounded-sm text-xs px-3 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Pesan Keluar</TabsTrigger>
           <TabsTrigger value="settings" data-testid="wa-tab-settings" className="rounded-sm text-xs px-3 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Koneksi WhatsApp</TabsTrigger>
         </TabsList>
@@ -450,6 +473,8 @@ export default function WhatsAppInboxPage() {
         <TabsContent value="contacts">{tab === "contacts" && <ContactsTab units={units} operators={operators} pengurusOptions={pengurusOptions} />}</TabsContent>
         <TabsContent value="automation">{tab === "automation" && <AutomationTab />}</TabsContent>
         <TabsContent value="summary">{tab === "summary" && <SummaryTab />}</TabsContent>
+        <TabsContent value="reminder">{tab === "reminder" && <ReminderTab />}</TabsContent>
+        <TabsContent value="weekly">{tab === "weekly" && <WeeklyTab />}</TabsContent>
         <TabsContent value="outbox">{tab === "outbox" && <OutboxTab />}</TabsContent>
         <TabsContent value="settings">{tab === "settings" && <ConnectionTab onChanged={(c) => setStatus((s) => ({ ...(s || {}), connection: c }))} />}</TabsContent>
       </Tabs>

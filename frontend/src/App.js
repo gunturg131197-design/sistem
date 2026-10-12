@@ -15,6 +15,7 @@ import PengurusPage from "@/pages/PengurusPage";
 import FinancePage from "@/pages/FinancePage";
 import WhatsAppInboxPage from "@/pages/WhatsAppInboxPage";
 import PrivacyPolicy from "@/pages/PrivacyPolicy";
+import HelpPage from "@/pages/HelpPage";
 import AppShell from "@/components/AppShell";
 import "@/App.css";
 
@@ -55,6 +56,7 @@ function AppRouter() {
       <Route path="/finance" element={<ProtectedRoute adminOnly><FinancePage /></ProtectedRoute>} />
       <Route path="/wa-inbox" element={<ProtectedRoute adminOnly><WhatsAppInboxPage /></ProtectedRoute>} />
       <Route path="/users" element={<ProtectedRoute adminOnly><UsersPage /></ProtectedRoute>} />
+      <Route path="/bantuan" element={<ProtectedRoute adminOnly><HelpPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

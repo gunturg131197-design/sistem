@@ -209,7 +209,15 @@ def build_summary_router(db, require_admin: Callable, audit_fn: Optional[Callabl
             elif not force and await db.wa_summaries.find_one({"tanggal": tanggal, "phone": s_["phone"], "status": "sent"}):
                 err = "Sudah terkirim untuk tanggal ini"
             elif not wa_configured():
-                status, mode, err = "preview", "simulasi", "WhatsApp belum terhubung — disimpan sebagai simulasi"
+                key = f"summary:{tanggal}:{norm_phone(s_['phone'])}" + (f":{run_id}" if force else "")
+                ob = await outbox.send(s_["phone"], {"type": "text", "text": {"preview_url": False, "body": s_["text"][:4096]}},
+                                       "daily_summary", key, actor=actor, ref={"summary_id": base["id"]},
+                                       label=f"Ringkasan harian {s_['pengurus']} {tanggal}")
+                base["outbox_id"] = ob.get("id", "")
+                if ob.get("deduped"):
+                    status, mode, err = "skipped", "simulasi", "Sudah disimulasikan untuk tanggal ini (gunakan Kirim Ulang Paksa)"
+                else:
+                    status, mode, err = "preview", "simulasi", "WhatsApp belum terhubung — disimpan sebagai simulasi"
             else:
                 last = await db.wa_last_inbound.find_one({"phone": norm_phone(s_["phone"])}, {"_id": 0})
                 in_window = bool(last) and datetime.fromisoformat(last["at"]) > datetime.now(timezone.utc) - timedelta(hours=24)

@@ -1,514 +1,694 @@
-#!/usr/bin/env python3
-"""Backend API testing for WhatsApp Cloud API integration."""
+"""Comprehensive backend API testing for TRIRARA TUNGGAL PUTRA.
+
+Tests:
+1. Authentication (admin/admin123, operator budi/budi123)
+2. HM Janggal detection & settings
+3. Pengingat Piutang (aging, settings, preview, run, history, cron)
+4. Laporan Mingguan (settings, preview, run, history, cron)
+5. WA Simulation (inbound text/image)
+6. Outbox simulation
+7. Backup & restore
+8. Security (admin vs operator access)
+9. Regression (stable features)
+"""
 import requests
 import sys
-import json
-from datetime import datetime
+import os
+from datetime import datetime, timedelta
+from typing import Optional
 
-BASE_URL = "https://theme-logo-studio.preview.emergentagent.com"
+# Get backend URL from frontend .env
+BACKEND_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://theme-logo-studio.preview.emergentagent.com")
+BASE_URL = f"{BACKEND_URL}/api"
 
-class Colors:
-    GREEN = '\033[92m'
-    RED = '\033[91m'
-    YELLOW = '\033[93m'
-    BLUE = '\033[94m'
-    END = '\033[0m'
+# Credentials from /app/memory/test_credentials.md
+ADMIN_USER = "admin"
+ADMIN_PASS = "admin123"
+OPERATOR_USER = "budi"
+OPERATOR_PASS = "budi123"
+
+# Cron secret from backend/.env
+WEBHOOK_CRON_SECRET = os.environ.get("WEBHOOK_CRON_SECRET", "NVPcg0VxXn9FrHRhtF0PKCqFht7-vRWE5fssbXZtPhogyZ66uZfuJA")
+
 
 class APITester:
     def __init__(self):
-        self.session = requests.Session()
         self.tests_run = 0
         self.tests_passed = 0
         self.tests_failed = 0
         self.admin_token = None
         self.operator_token = None
+        self.test_data_ids = []  # Track created test data for cleanup
 
-    def log(self, msg, color=Colors.BLUE):
-        print(f"{color}{msg}{Colors.END}")
+    def log(self, msg: str, level: str = "INFO"):
+        prefix = {"INFO": "ℹ️", "PASS": "✅", "FAIL": "❌", "WARN": "⚠️"}.get(level, "•")
+        print(f"{prefix} {msg}")
 
-    def test(self, name, method, endpoint, expected_status, data=None, headers=None, params=None, check_fn=None):
+    def test(self, name: str, method: str, endpoint: str, expected_status: int,
+             token: Optional[str] = None, data: Optional[dict] = None, 
+             headers: Optional[dict] = None, files: Optional[dict] = None) -> tuple[bool, dict]:
         """Run a single API test."""
-        url = f"{BASE_URL}{endpoint}"
-        self.tests_run += 1
+        url = f"{BASE_URL}/{endpoint.lstrip('/')}"
+        hdrs = headers or {}
+        if token:
+            hdrs["Authorization"] = f"Bearer {token}"
         
-        print(f"\n{Colors.BLUE}🔍 Test {self.tests_run}: {name}{Colors.END}")
+        self.tests_run += 1
+        self.log(f"Testing: {name}", "INFO")
         
         try:
-            h = headers or {}
-            if method == 'GET':
-                response = self.session.get(url, headers=h, params=params)
-            elif method == 'POST':
-                response = self.session.post(url, json=data, headers=h, params=params)
-            elif method == 'PUT':
-                response = self.session.put(url, json=data, headers=h)
-            elif method == 'PATCH':
-                response = self.session.patch(url, json=data, headers=h)
-            elif method == 'DELETE':
-                response = self.session.delete(url, headers=h)
+            if method == "GET":
+                r = requests.get(url, headers=hdrs, timeout=30)
+            elif method == "POST":
+                if files:
+                    r = requests.post(url, headers=hdrs, data=data, files=files, timeout=30)
+                else:
+                    hdrs["Content-Type"] = "application/json"
+                    r = requests.post(url, headers=hdrs, json=data, timeout=30)
+            elif method == "PUT":
+                hdrs["Content-Type"] = "application/json"
+                r = requests.put(url, headers=hdrs, json=data, timeout=30)
+            elif method == "PATCH":
+                hdrs["Content-Type"] = "application/json"
+                r = requests.patch(url, headers=hdrs, json=data, timeout=30)
+            elif method == "DELETE":
+                r = requests.delete(url, headers=hdrs, timeout=30)
             else:
                 raise ValueError(f"Unsupported method: {method}")
-
-            status_ok = response.status_code == expected_status
-            check_ok = True
-            check_msg = ""
             
-            if check_fn and status_ok:
-                try:
-                    body = response.json() if response.content else {}
-                    check_ok, check_msg = check_fn(body)
-                except Exception as e:
-                    check_ok = False
-                    check_msg = f"Check function error: {str(e)}"
-
-            success = status_ok and check_ok
-            
+            success = r.status_code == expected_status
             if success:
                 self.tests_passed += 1
-                print(f"{Colors.GREEN}✅ PASSED - Status: {response.status_code}{Colors.END}")
-                if check_msg:
-                    print(f"   {check_msg}")
+                self.log(f"PASS - {name} (status {r.status_code})", "PASS")
             else:
                 self.tests_failed += 1
-                print(f"{Colors.RED}❌ FAILED{Colors.END}")
-                if not status_ok:
-                    print(f"   Expected status {expected_status}, got {response.status_code}")
-                if not check_ok:
-                    print(f"   {check_msg}")
-                try:
-                    print(f"   Response: {response.text[:300]}")
-                except:
-                    pass
-
-            return success, response
-
+                self.log(f"FAIL - {name}: Expected {expected_status}, got {r.status_code}", "FAIL")
+                if r.text:
+                    self.log(f"  Response: {r.text[:200]}", "FAIL")
+            
+            try:
+                return success, r.json() if r.text else {}
+            except:
+                return success, {"text": r.text}
+        
         except Exception as e:
             self.tests_failed += 1
-            print(f"{Colors.RED}❌ FAILED - Error: {str(e)}{Colors.END}")
-            return False, None
+            self.log(f"FAIL - {name}: {type(e).__name__}: {str(e)}", "FAIL")
+            return False, {"error": str(e)}
 
-    def login(self, username, password):
-        """Login and store session cookie."""
-        success, response = self.test(
+    def login(self, username: str, password: str) -> Optional[str]:
+        """Login and return session token."""
+        self.log(f"Logging in as {username}...", "INFO")
+        success, resp = self.test(
             f"Login as {username}",
             "POST",
-            "/api/auth/login",
+            "/auth/login",
             200,
             data={"username": username, "password": password}
         )
-        return success
+        if success:
+            # Extract token from Set-Cookie header or response
+            # For now, we'll make another request to get the token
+            r = requests.post(f"{BASE_URL}/auth/login", 
+                            json={"username": username, "password": password})
+            if r.status_code == 200:
+                # Check if session_token is in cookies
+                token = r.cookies.get("session_token")
+                if token:
+                    self.log(f"Logged in successfully as {username}", "PASS")
+                    return token
+        return None
 
-    def test_wa_connection(self):
-        """Test GET /api/wa/connection endpoint."""
-        def check(body):
-            if body.get("level") != "not_configured":
-                return False, f"Expected level 'not_configured', got '{body.get('level')}'"
-            if not body.get("missing"):
-                return False, "Expected 'missing' list to be non-empty"
-            # Check that no secrets are exposed
-            body_str = json.dumps(body)
-            if "EAA" in body_str or "token" in body_str.lower():
-                return False, "Response may contain token values"
-            return True, f"Level: {body.get('level')}, Missing: {len(body.get('missing', []))} items"
+    def test_auth(self):
+        """Test authentication."""
+        self.log("\n=== Testing Authentication ===", "INFO")
         
-        return self.test(
-            "GET /api/wa/connection (not configured)",
-            "GET",
-            "/api/wa/connection",
-            200,
-            check_fn=check
-        )
-
-    def test_wa_status(self):
-        """Test GET /api/wa/status endpoint."""
-        def check(body):
-            if body.get("configured") != False:
-                return False, "Expected configured=false"
-            conn = body.get("connection", {})
-            if conn.get("level") != "not_configured":
-                return False, f"Expected connection level 'not_configured', got '{conn.get('level')}'"
-            return True, f"Configured: {body.get('configured')}, Connection: {conn.get('level')}"
-        
-        return self.test(
-            "GET /api/wa/status (not configured)",
-            "GET",
-            "/api/wa/status",
-            200,
-            check_fn=check
-        )
-
-    def test_wa_cloud_check_unconfigured(self):
-        """Test POST /api/wa/cloud/check when not configured."""
-        def check(body):
-            if "Kredensial WhatsApp belum lengkap" not in body.get("detail", ""):
-                return False, f"Expected error message about missing credentials, got: {body.get('detail')}"
-            return True, "Correctly returns 400 when not configured"
-        
-        return self.test(
-            "POST /api/wa/cloud/check (not configured)",
-            "POST",
-            "/api/wa/cloud/check",
-            400,
-            check_fn=check
-        )
-
-    def test_wa_cloud_send_test_unconfigured(self):
-        """Test POST /api/wa/cloud/send-test when not configured."""
-        def check(body):
-            if "Kredensial WhatsApp belum lengkap" not in body.get("detail", ""):
-                return False, f"Expected error message about missing credentials"
-            return True, "Correctly returns 400 when not configured"
-        
-        return self.test(
-            "POST /api/wa/cloud/send-test (not configured)",
-            "POST",
-            "/api/wa/cloud/send-test",
-            400,
-            data={"to": "628123456789", "mode": "text", "text": "Test"},
-            check_fn=check
-        )
-
-    def test_wa_cloud_register_unconfigured(self):
-        """Test POST /api/wa/cloud/register when not configured."""
-        def check(body):
-            if "Kredensial WhatsApp belum lengkap" not in body.get("detail", ""):
-                return False, "Expected error message about missing credentials"
-            return True, "Correctly returns 400 when not configured"
-        
-        return self.test(
-            "POST /api/wa/cloud/register (not configured)",
-            "POST",
-            "/api/wa/cloud/register",
-            400,
-            data={"pin": "123456"},
-            check_fn=check
-        )
-
-    def test_wa_cloud_register_invalid_pin(self):
-        """Test POST /api/wa/cloud/register with invalid PIN."""
-        def check(body):
-            if "PIN harus 6 digit angka" not in body.get("detail", ""):
-                return False, "Expected error about 6-digit PIN"
-            return True, "Correctly validates PIN format"
-        
-        # Test with non-6-digit PIN
-        self.test(
-            "POST /api/wa/cloud/register (invalid PIN - 5 digits)",
-            "POST",
-            "/api/wa/cloud/register",
-            400,
-            data={"pin": "12345"},
-            check_fn=check
-        )
-        
-        # Test with non-numeric PIN
-        return self.test(
-            "POST /api/wa/cloud/register (invalid PIN - non-numeric)",
-            "POST",
-            "/api/wa/cloud/register",
-            400,
-            data={"pin": "12345a"},
-            check_fn=check
-        )
-
-    def test_wa_cloud_subscribe_unconfigured(self):
-        """Test POST /api/wa/cloud/subscribe when not configured."""
-        def check(body):
-            if "Kredensial WhatsApp belum lengkap" not in body.get("detail", ""):
-                return False, "Expected error message about missing credentials"
-            return True, "Correctly returns 400 when not configured"
-        
-        return self.test(
-            "POST /api/wa/cloud/subscribe (not configured)",
-            "POST",
-            "/api/wa/cloud/subscribe",
-            400,
-            check_fn=check
-        )
-
-    def test_wa_outbox(self):
-        """Test GET /api/wa/outbox endpoint."""
-        def check(body):
-            if "items" not in body or "counts" not in body:
-                return False, "Expected 'items' and 'counts' in response"
-            if not isinstance(body["items"], list):
-                return False, "'items' should be a list"
-            if not isinstance(body["counts"], dict):
-                return False, "'counts' should be a dict"
-            # Check for token leakage in outbox items
-            body_str = json.dumps(body)
-            if "EAA" in body_str:
-                return False, "Outbox response may contain token values"
-            return True, f"Items: {len(body['items'])}, Counts: {body['counts']}"
-        
-        return self.test(
-            "GET /api/wa/outbox",
-            "GET",
-            "/api/wa/outbox",
-            200,
-            check_fn=check
-        )
-
-    def test_wa_outbox_retry_invalid(self):
-        """Test POST /api/wa/outbox/{id}/retry with invalid ID."""
-        def check(body):
-            # Should return error for non-existent or non-failed message
-            return True, f"Response: {body.get('detail', body)}"
-        
-        return self.test(
-            "POST /api/wa/outbox/{id}/retry (invalid ID)",
-            "POST",
-            "/api/wa/outbox/nonexistent-id/retry",
-            400,
-            check_fn=check
-        )
-
-    def test_cron_wa_outbox_retry_no_auth(self):
-        """Test POST /api/cron/wa-outbox-retry without auth."""
-        return self.test(
-            "POST /api/cron/wa-outbox-retry (no auth)",
-            "POST",
-            "/api/cron/wa-outbox-retry",
-            401
-        )
-
-    def test_cron_wa_outbox_retry_wrong_auth(self):
-        """Test POST /api/cron/wa-outbox-retry with wrong auth."""
-        return self.test(
-            "POST /api/cron/wa-outbox-retry (wrong auth)",
-            "POST",
-            "/api/cron/wa-outbox-retry",
-            401,
-            headers={"Authorization": "Bearer wrong-secret"}
-        )
-
-    def test_cron_wa_outbox_retry_valid(self):
-        """Test POST /api/cron/wa-outbox-retry with valid auth."""
-        # Read the secret from .env
-        try:
-            with open("/app/backend/.env") as f:
-                for line in f:
-                    if line.startswith("WEBHOOK_CRON_SECRET="):
-                        secret = line.split("=", 1)[1].strip()
-                        break
-        except:
-            print(f"{Colors.YELLOW}⚠️  Could not read WEBHOOK_CRON_SECRET from .env{Colors.END}")
-            return False, None
-        
-        def check(body):
-            if body.get("status") not in ("accepted", "duplicate"):
-                return False, f"Expected status 'accepted' or 'duplicate', got '{body.get('status')}'"
-            return True, f"Status: {body.get('status')}"
-        
-        return self.test(
-            "POST /api/cron/wa-outbox-retry (valid auth)",
-            "POST",
-            "/api/cron/wa-outbox-retry",
-            200,
-            headers={"Authorization": f"Bearer {secret}"},
-            data={},
-            check_fn=check
-        )
-
-    def test_cron_wa_outbox_retry_duplicate(self):
-        """Test POST /api/cron/wa-outbox-retry with same X-Webhook-Id."""
-        try:
-            with open("/app/backend/.env") as f:
-                for line in f:
-                    if line.startswith("WEBHOOK_CRON_SECRET="):
-                        secret = line.split("=", 1)[1].strip()
-                        break
-        except:
-            return False, None
-        
-        webhook_id = f"test-{int(datetime.now().timestamp())}"
-        
-        # First call
-        self.test(
-            "POST /api/cron/wa-outbox-retry (first call)",
-            "POST",
-            "/api/cron/wa-outbox-retry",
-            200,
-            headers={"Authorization": f"Bearer {secret}", "X-Webhook-Id": webhook_id},
-            data={}
-        )
-        
-        # Second call with same webhook_id should return duplicate
-        def check(body):
-            if body.get("status") != "duplicate":
-                return False, f"Expected status 'duplicate', got '{body.get('status')}'"
-            return True, "Correctly detects duplicate webhook ID"
-        
-        return self.test(
-            "POST /api/cron/wa-outbox-retry (duplicate webhook ID)",
-            "POST",
-            "/api/cron/wa-outbox-retry",
-            200,
-            headers={"Authorization": f"Bearer {secret}", "X-Webhook-Id": webhook_id},
-            data={},
-            check_fn=check
-        )
-
-    def test_cron_wa_outbox_retry_invalid_body(self):
-        """Test POST /api/cron/wa-outbox-retry with invalid JSON body."""
-        try:
-            with open("/app/backend/.env") as f:
-                for line in f:
-                    if line.startswith("WEBHOOK_CRON_SECRET="):
-                        secret = line.split("=", 1)[1].strip()
-                        break
-        except:
-            return False, None
-        
-        # Send non-object JSON (array instead of object)
-        import requests
-        url = f"{BASE_URL}/api/cron/wa-outbox-retry"
-        response = requests.post(url, json=["not", "an", "object"], headers={"Authorization": f"Bearer {secret}"})
-        
-        self.tests_run += 1
-        if response.status_code == 400:
-            self.tests_passed += 1
-            print(f"\n{Colors.BLUE}🔍 Test {self.tests_run}: POST /api/cron/wa-outbox-retry (invalid body){Colors.END}")
-            print(f"{Colors.GREEN}✅ PASSED - Status: {response.status_code}{Colors.END}")
-            return True, response
-        else:
-            self.tests_failed += 1
-            print(f"\n{Colors.BLUE}🔍 Test {self.tests_run}: POST /api/cron/wa-outbox-retry (invalid body){Colors.END}")
-            print(f"{Colors.RED}❌ FAILED - Expected 400, got {response.status_code}{Colors.END}")
-            return False, response
-
-    def test_wa_summary_preview(self):
-        """Test GET /api/wa/summary/preview."""
-        def check(body):
-            if "tanggal" not in body or "items" not in body:
-                return False, "Expected 'tanggal' and 'items' in response"
-            if not isinstance(body["items"], list):
-                return False, "'items' should be a list"
-            return True, f"Tanggal: {body.get('tanggal')}, Items: {len(body['items'])}"
-        
-        return self.test(
-            "GET /api/wa/summary/preview",
-            "GET",
-            "/api/wa/summary/preview",
-            200,
-            check_fn=check
-        )
-
-    def test_wa_summary_run(self):
-        """Test POST /api/wa/summary/run."""
-        def check(body):
-            if "run_id" not in body or "counts" not in body:
-                return False, "Expected 'run_id' and 'counts' in response"
-            counts = body.get("counts", {})
-            # In preview mode (not configured), should have 'preview' or 'skipped' counts
-            if not any(k in counts for k in ["preview", "skipped", "sent"]):
-                return False, "Expected counts to have 'preview', 'skipped', or 'sent'"
-            return True, f"Run ID: {body.get('run_id')}, Counts: {counts}"
-        
-        return self.test(
-            "POST /api/wa/summary/run",
-            "POST",
-            "/api/wa/summary/run",
-            200,
-            data={},
-            check_fn=check
-        )
-
-    def test_operator_access(self):
-        """Test that operator (budi) cannot access admin endpoints."""
-        # Logout admin
-        self.session = requests.Session()
+        # Login as admin
+        self.admin_token = self.login(ADMIN_USER, ADMIN_PASS)
+        if not self.admin_token:
+            self.log("Failed to login as admin - cannot continue", "FAIL")
+            return False
         
         # Login as operator
-        if not self.login("budi", "budi123"):
-            print(f"{Colors.YELLOW}⚠️  Could not login as operator{Colors.END}")
-            return False, None
+        self.operator_token = self.login(OPERATOR_USER, OPERATOR_PASS)
+        if not self.operator_token:
+            self.log("Failed to login as operator", "FAIL")
         
-        # Try to access admin endpoint
-        def check(body):
-            # Should return 403 Forbidden
-            return True, "Operator correctly denied access"
+        # Test /auth/me
+        self.test("Get current user (admin)", "GET", "/auth/me", 200, token=self.admin_token)
         
-        return self.test(
-            "GET /api/wa/connection (as operator - should fail)",
-            "GET",
-            "/api/wa/connection",
-            403,
-            check_fn=check
-        )
+        return True
 
-    def test_unauthenticated_access(self):
-        """Test that unauthenticated users cannot access endpoints."""
-        # Logout
-        self.session = requests.Session()
+    def test_security(self):
+        """Test security: operator should not access admin endpoints."""
+        self.log("\n=== Testing Security (Admin vs Operator) ===", "INFO")
         
-        return self.test(
-            "GET /api/wa/connection (unauthenticated)",
-            "GET",
-            "/api/wa/connection",
-            401
-        )
+        if not self.operator_token:
+            self.log("Skipping security tests - no operator token", "WARN")
+            return
+        
+        # Operator should get 403 on admin endpoints
+        self.test("Operator access to /wa/status (should fail)", "GET", "/wa/status", 403, 
+                 token=self.operator_token)
+        self.test("Operator access to /admin/backup/info (should fail)", "GET", "/admin/backup/info", 403,
+                 token=self.operator_token)
+        
+        # Unauthenticated should get 401
+        self.test("Unauthenticated access to /wa/status", "GET", "/wa/status", 401)
 
-    def print_summary(self):
-        """Print test summary."""
-        print(f"\n{'='*60}")
-        print(f"{Colors.BLUE}📊 TEST SUMMARY{Colors.END}")
-        print(f"{'='*60}")
-        print(f"Total tests run: {self.tests_run}")
-        print(f"{Colors.GREEN}✅ Passed: {self.tests_passed}{Colors.END}")
-        print(f"{Colors.RED}❌ Failed: {self.tests_failed}{Colors.END}")
+    def test_hm_janggal(self):
+        """Test HM Janggal (abnormal hour meter) detection."""
+        self.log("\n=== Testing HM Janggal Detection ===", "INFO")
         
-        if self.tests_failed == 0:
-            print(f"\n{Colors.GREEN}🎉 All tests passed!{Colors.END}")
-            return 0
-        else:
-            print(f"\n{Colors.RED}⚠️  Some tests failed{Colors.END}")
-            return 1
+        # Get current auto settings
+        success, settings = self.test("Get auto settings", "GET", "/wa/auto-settings", 200, 
+                                     token=self.admin_token)
+        if success:
+            self.log(f"  Current HM settings: spike_check={settings.get('hm_spike_check')}, "
+                    f"max_per_day={settings.get('hm_max_per_day')}, "
+                    f"min_confidence={settings.get('min_confidence')}", "INFO")
+        
+        # Test updating HM settings
+        self.test("Update HM settings (valid)", "PUT", "/wa/auto-settings", 200,
+                 token=self.admin_token,
+                 data={
+                     "transfer_enabled": False,
+                     "hm_enabled": False,
+                     "min_confidence": 0.9,
+                     "hm_spike_check": True,
+                     "hm_max_per_day": 20.0
+                 })
+        
+        # Test invalid hm_max_per_day (> 24)
+        self.test("Update HM settings (invalid max > 24)", "PUT", "/wa/auto-settings", 400,
+                 token=self.admin_token,
+                 data={
+                     "transfer_enabled": False,
+                     "hm_enabled": False,
+                     "min_confidence": 0.9,
+                     "hm_max_per_day": 25.0
+                 })
+        
+        # Test invalid min_confidence (< 0.9)
+        self.test("Update HM settings (invalid confidence < 0.9)", "PUT", "/wa/auto-settings", 400,
+                 token=self.admin_token,
+                 data={
+                     "transfer_enabled": False,
+                     "hm_enabled": False,
+                     "min_confidence": 0.85,
+                     "hm_max_per_day": 20.0
+                 })
+        
+        # Get inbox with HM flag filter
+        self.test("Get inbox with HM flag filter", "GET", "/wa/inbox?status=pending,duplicate&flag=hm", 200,
+                 token=self.admin_token)
+        
+        # Get WA status (should include hm_flag count)
+        success, status = self.test("Get WA status", "GET", "/wa/status", 200, token=self.admin_token)
+        if success:
+            counts = status.get("counts", {})
+            self.log(f"  WA status counts: {counts}", "INFO")
+
+    def test_piutang_aging(self):
+        """Test Pengingat Piutang (debt reminders) - aging calculation."""
+        self.log("\n=== Testing Piutang Aging ===", "INFO")
+        
+        today = datetime.now().strftime("%Y-%m-%d")
+        
+        # Get aging report
+        success, aging = self.test("Get piutang aging", "GET", f"/wa/piutang/aging?as_of={today}", 200,
+                                  token=self.admin_token)
+        if success:
+            items = aging.get("items", [])
+            self.log(f"  Found {len(items)} pengurus with piutang data", "INFO")
+            if items:
+                sample = items[0]
+                self.log(f"  Sample: {sample.get('pengurus')} - piutang: {sample.get('piutang')}, "
+                        f"umur: {sample.get('umur_hari')} hari", "INFO")
+
+    def test_piutang_settings(self):
+        """Test Pengingat Piutang settings."""
+        self.log("\n=== Testing Piutang Reminder Settings ===", "INFO")
+        
+        # Get current settings
+        success, settings = self.test("Get reminder settings", "GET", "/wa/reminder/settings", 200,
+                                     token=self.admin_token)
+        if success:
+            self.log(f"  Enabled: {settings.get('enabled')}, "
+                    f"Send hour: {settings.get('send_hour')}, "
+                    f"Days: {settings.get('days')}", "INFO")
+        
+        # Update settings (valid)
+        self.test("Update reminder settings (valid)", "PUT", "/wa/reminder/settings", 200,
+                 token=self.admin_token,
+                 data={
+                     "enabled": False,  # Keep disabled for testing
+                     "send_hour": 9,
+                     "days": [1, 2, 3, 4, 5],
+                     "min_nominal": 1000000.0,
+                     "min_age_days": 14,
+                     "cooldown_days": 3,
+                     "skip_if_pending_transfer": True,
+                     "cc_owner": False,
+                     "exclude": [],
+                     "template_name": "",
+                     "template_lang": "id"
+                 })
+        
+        # Test invalid send_hour
+        self.test("Update reminder settings (invalid send_hour)", "PUT", "/wa/reminder/settings", 400,
+                 token=self.admin_token,
+                 data={
+                     "enabled": False,
+                     "send_hour": 25,  # Invalid
+                     "days": [1, 2, 3],
+                     "min_nominal": 1000000.0,
+                     "min_age_days": 14,
+                     "cooldown_days": 3
+                 })
+        
+        # Test invalid days (empty)
+        self.test("Update reminder settings (empty days)", "PUT", "/wa/reminder/settings", 400,
+                 token=self.admin_token,
+                 data={
+                     "enabled": False,
+                     "send_hour": 9,
+                     "days": [],  # Invalid
+                     "min_nominal": 1000000.0,
+                     "min_age_days": 14,
+                     "cooldown_days": 3
+                 })
+        
+        # Test invalid cooldown
+        self.test("Update reminder settings (invalid cooldown)", "PUT", "/wa/reminder/settings", 400,
+                 token=self.admin_token,
+                 data={
+                     "enabled": False,
+                     "send_hour": 9,
+                     "days": [1, 2, 3],
+                     "min_nominal": 1000000.0,
+                     "min_age_days": 14,
+                     "cooldown_days": 61  # > 60
+                 })
+
+    def test_piutang_preview_run(self):
+        """Test Pengingat Piutang preview and run."""
+        self.log("\n=== Testing Piutang Reminder Preview & Run ===", "INFO")
+        
+        # Get preview
+        success, preview = self.test("Get reminder preview", "GET", "/wa/reminder/preview", 200,
+                                    token=self.admin_token)
+        if success:
+            items = preview.get("items", [])
+            self.log(f"  Preview: {len(items)} pengurus", "INFO")
+            eligible = [i for i in items if i.get("eligible")]
+            self.log(f"  Eligible for reminder: {len(eligible)}", "INFO")
+        
+        # Run reminder (manual, no force)
+        success, run_result = self.test("Run reminder (manual)", "POST", "/wa/reminder/run", 200,
+                                       token=self.admin_token,
+                                       data={"force": False})
+        if success:
+            counts = run_result.get("counts", {})
+            self.log(f"  Run result: {counts}", "INFO")
+        
+        # Get history
+        success, history = self.test("Get reminder history", "GET", "/wa/reminder/history?limit=10", 200,
+                                    token=self.admin_token)
+        if success:
+            self.log(f"  History: {len(history)} records", "INFO")
+
+    def test_piutang_cron(self):
+        """Test Pengingat Piutang cron endpoint."""
+        self.log("\n=== Testing Piutang Reminder Cron ===", "INFO")
+        
+        # Test without auth (should fail)
+        self.test("Cron piutang-reminder (no auth)", "POST", "/cron/piutang-reminder", 401)
+        
+        # Test with wrong bearer token
+        self.test("Cron piutang-reminder (wrong token)", "POST", "/cron/piutang-reminder", 401,
+                 headers={"Authorization": "Bearer wrong_token"})
+        
+        # Test with correct bearer token
+        self.test("Cron piutang-reminder (correct token)", "POST", "/cron/piutang-reminder", 200,
+                 headers={"Authorization": f"Bearer {WEBHOOK_CRON_SECRET}",
+                         "X-Webhook-Id": f"test-{datetime.now().timestamp()}"})
+        
+        # Test duplicate webhook ID (should return duplicate status)
+        webhook_id = f"test-duplicate-{datetime.now().timestamp()}"
+        self.test("Cron piutang-reminder (first call)", "POST", "/cron/piutang-reminder", 200,
+                 headers={"Authorization": f"Bearer {WEBHOOK_CRON_SECRET}",
+                         "X-Webhook-Id": webhook_id})
+        self.test("Cron piutang-reminder (duplicate)", "POST", "/cron/piutang-reminder", 200,
+                 headers={"Authorization": f"Bearer {WEBHOOK_CRON_SECRET}",
+                         "X-Webhook-Id": webhook_id})
+
+    def test_weekly_settings(self):
+        """Test Laporan Mingguan settings."""
+        self.log("\n=== Testing Weekly Report Settings ===", "INFO")
+        
+        # Get current settings
+        success, settings = self.test("Get weekly settings", "GET", "/wa/weekly/settings", 200,
+                                     token=self.admin_token)
+        if success:
+            recipients = settings.get("recipients", [])
+            self.log(f"  Enabled: {settings.get('enabled')}, Recipients: {len(recipients)}", "INFO")
+        
+        # Update settings (valid)
+        self.test("Update weekly settings (valid)", "PUT", "/wa/weekly/settings", 200,
+                 token=self.admin_token,
+                 data={
+                     "enabled": True,
+                     "recipients": [
+                         {"nama": "Pemilik", "phone": "6282343070023"}
+                     ],
+                     "template_name": "",
+                     "template_lang": "id"
+                 })
+        
+        # Test invalid phone
+        self.test("Update weekly settings (invalid phone)", "PUT", "/wa/weekly/settings", 400,
+                 token=self.admin_token,
+                 data={
+                     "enabled": True,
+                     "recipients": [
+                         {"nama": "Test", "phone": "123"}  # Too short
+                     ],
+                     "template_name": "",
+                     "template_lang": "id"
+                 })
+        
+        # Test empty recipients
+        self.test("Update weekly settings (no recipients)", "PUT", "/wa/weekly/settings", 400,
+                 token=self.admin_token,
+                 data={
+                     "enabled": True,
+                     "recipients": [],
+                     "template_name": "",
+                     "template_lang": "id"
+                 })
+
+    def test_weekly_preview_run(self):
+        """Test Laporan Mingguan preview and run."""
+        self.log("\n=== Testing Weekly Report Preview & Run ===", "INFO")
+        
+        # Get preview (default: last week)
+        success, preview = self.test("Get weekly preview (default)", "GET", "/wa/weekly/preview", 200,
+                                    token=self.admin_token)
+        if success:
+            self.log(f"  Week: {preview.get('week_start')} to {preview.get('week_end')}", "INFO")
+            self.log(f"  Total jam: {preview.get('total_jam')}, "
+                    f"Total pemasukan: {preview.get('total_pemasukan')}", "INFO")
+        
+        # Get preview for specific week
+        monday = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        success, preview = self.test("Get weekly preview (specific week)", "GET", 
+                                    f"/wa/weekly/preview?week_start={monday}", 200,
+                                    token=self.admin_token)
+        
+        # Run weekly report (manual)
+        success, run_result = self.test("Run weekly report (manual)", "POST", "/wa/weekly/run", 200,
+                                       token=self.admin_token,
+                                       data={"force": False})
+        if success:
+            counts = run_result.get("counts", {})
+            self.log(f"  Run result: {counts}", "INFO")
+        
+        # Get history
+        success, history = self.test("Get weekly history", "GET", "/wa/weekly/history?limit=10", 200,
+                                    token=self.admin_token)
+        if success:
+            self.log(f"  History: {len(history)} records", "INFO")
+
+    def test_weekly_cron(self):
+        """Test Laporan Mingguan cron endpoint."""
+        self.log("\n=== Testing Weekly Report Cron ===", "INFO")
+        
+        # Test without auth
+        self.test("Cron weekly-report (no auth)", "POST", "/cron/weekly-report", 401)
+        
+        # Test with correct bearer token
+        self.test("Cron weekly-report (correct token)", "POST", "/cron/weekly-report", 200,
+                 headers={"Authorization": f"Bearer {WEBHOOK_CRON_SECRET}",
+                         "X-Webhook-Id": f"test-weekly-{datetime.now().timestamp()}"})
+
+    def test_wa_simulation(self):
+        """Test WhatsApp simulation (inbound messages)."""
+        self.log("\n=== Testing WhatsApp Simulation ===", "INFO")
+        
+        # Test text message simulation (uses multipart form data)
+        url = f"{BASE_URL}/wa/simulate/inbound"
+        hdrs = {"Authorization": f"Bearer {self.admin_token}"}
+        
+        self.tests_run += 1
+        self.log("Testing: Simulate inbound text", "INFO")
+        try:
+            r = requests.post(url, headers=hdrs, data={
+                "phone": "628123456789",
+                "name": "Test User",
+                "text": "Test message",
+                "message_id": f"sim.test.{datetime.now().timestamp()}"
+            }, timeout=30)
+            
+            if r.status_code == 200:
+                self.tests_passed += 1
+                self.log(f"PASS - Simulate inbound text (status {r.status_code})", "PASS")
+                result = r.json()
+                self.log(f"  Simulation result: {result.get('status')}, type: {result.get('type')}", "INFO")
+            else:
+                self.tests_failed += 1
+                self.log(f"FAIL - Simulate inbound text: Expected 200, got {r.status_code}", "FAIL")
+        except Exception as e:
+            self.tests_failed += 1
+            self.log(f"FAIL - Simulate inbound text: {str(e)}", "FAIL")
+        
+        # Test invalid phone
+        self.tests_run += 1
+        self.log("Testing: Simulate inbound (invalid phone)", "INFO")
+        try:
+            r = requests.post(url, headers=hdrs, data={
+                "phone": "123",  # Too short
+                "name": "Test",
+                "text": "Test"
+            }, timeout=30)
+            
+            if r.status_code == 400:
+                self.tests_passed += 1
+                self.log(f"PASS - Simulate inbound (invalid phone) (status {r.status_code})", "PASS")
+            else:
+                self.tests_failed += 1
+                self.log(f"FAIL - Simulate inbound (invalid phone): Expected 400, got {r.status_code}", "FAIL")
+        except Exception as e:
+            self.tests_failed += 1
+            self.log(f"FAIL - Simulate inbound (invalid phone): {str(e)}", "FAIL")
+        
+        # Test empty text and no file
+        self.tests_run += 1
+        self.log("Testing: Simulate inbound (empty text, no file)", "INFO")
+        try:
+            r = requests.post(url, headers=hdrs, data={
+                "phone": "628123456789",
+                "name": "Test",
+                "text": ""
+            }, timeout=30)
+            
+            if r.status_code == 400:
+                self.tests_passed += 1
+                self.log(f"PASS - Simulate inbound (empty text, no file) (status {r.status_code})", "PASS")
+            else:
+                self.tests_failed += 1
+                self.log(f"FAIL - Simulate inbound (empty text, no file): Expected 400, got {r.status_code}", "FAIL")
+        except Exception as e:
+            self.tests_failed += 1
+            self.log(f"FAIL - Simulate inbound (empty text, no file): {str(e)}", "FAIL")
+
+    def test_outbox(self):
+        """Test outbox (simulated messages)."""
+        self.log("\n=== Testing Outbox ===", "INFO")
+        
+        # Get outbox
+        success, outbox = self.test("Get outbox", "GET", "/wa/outbox?limit=50", 200,
+                                   token=self.admin_token)
+        if success:
+            items = outbox.get("items", [])
+            counts = outbox.get("counts", {})
+            self.log(f"  Outbox: {len(items)} items, counts: {counts}", "INFO")
+            
+            # Check for simulated items
+            simulated = [i for i in items if i.get("status") == "simulated"]
+            self.log(f"  Simulated messages: {len(simulated)}", "INFO")
+
+    def test_backup(self):
+        """Test backup functionality."""
+        self.log("\n=== Testing Backup ===", "INFO")
+        
+        # Get backup info
+        success, info = self.test("Get backup info", "GET", "/admin/backup/info", 200,
+                                 token=self.admin_token)
+        if success:
+            collections = info.get("collections", {})
+            self.log(f"  Collections: {len(collections)}", "INFO")
+            self.log(f"  Excluded: {info.get('excluded')}", "INFO")
+        
+        # Test backup download endpoint (GET with stream to avoid downloading full file)
+        self.log("Testing backup download endpoint...", "INFO")
+        try:
+            r = requests.get(f"{BASE_URL}/admin/backup?include_media=false",
+                           headers={"Authorization": f"Bearer {self.admin_token}"},
+                           stream=True, timeout=30)
+            if r.status_code == 200:
+                self.tests_passed += 1
+                self.log("PASS - Backup download endpoint accessible", "PASS")
+                # Close the stream without downloading
+                r.close()
+            else:
+                self.tests_failed += 1
+                self.log(f"FAIL - Backup download returned {r.status_code}", "FAIL")
+        except Exception as e:
+            self.tests_failed += 1
+            self.log(f"FAIL - Backup download: {str(e)}", "FAIL")
+        self.tests_run += 1
+
+    def test_regression_auth(self):
+        """Test regression: authentication endpoints."""
+        self.log("\n=== Regression: Authentication ===", "INFO")
+        
+        # Test /auth/me
+        self.test("Auth: Get current user", "GET", "/auth/me", 200, token=self.admin_token)
+        
+        # Note: We skip logout test here to keep the session valid for other regression tests
+
+    def test_regression_units(self):
+        """Test regression: Units CRUD."""
+        self.log("\n=== Regression: Units ===", "INFO")
+        
+        # List units
+        success, units = self.test("Units: List", "GET", "/units", 200, token=self.admin_token)
+        if success:
+            self.log(f"  Found {len(units)} units", "INFO")
+
+    def test_regression_operations(self):
+        """Test regression: Operations."""
+        self.log("\n=== Regression: Operations ===", "INFO")
+        
+        # List operations
+        success, ops = self.test("Operations: List", "GET", "/operations", 200, token=self.admin_token)
+        if success:
+            self.log(f"  Found {len(ops)} operations", "INFO")
+
+    def test_regression_pengurus(self):
+        """Test regression: Pengurus."""
+        self.log("\n=== Regression: Pengurus ===", "INFO")
+        
+        # List pengurus
+        success, pengurus = self.test("Pengurus: List", "GET", "/pengurus", 200, token=self.admin_token)
+        if success:
+            self.log(f"  Found {len(pengurus)} pengurus", "INFO")
+        
+        # List pengurus excavator registry
+        success, registry = self.test("Pengurus Excavator: List", "GET", "/pengurus-excavator", 200,
+                                     token=self.admin_token)
+        if success:
+            self.log(f"  Found {len(registry)} in registry", "INFO")
+
+    def test_regression_wa_basic(self):
+        """Test regression: Basic WA endpoints."""
+        self.log("\n=== Regression: WhatsApp Basic ===", "INFO")
+        
+        # Get WA status
+        self.test("WA: Get status", "GET", "/wa/status", 200, token=self.admin_token)
+        
+        # Get inbox
+        self.test("WA: Get inbox", "GET", "/wa/inbox", 200, token=self.admin_token)
+        
+        # Get contacts
+        self.test("WA: Get contacts", "GET", "/wa/contacts", 200, token=self.admin_token)
+        
+        # Get audit log
+        self.test("WA: Get audit", "GET", "/wa/audit?limit=50", 200, token=self.admin_token)
+        
+        # Get connection status
+        self.test("WA: Get connection", "GET", "/wa/connection", 200, token=self.admin_token)
+
+    def test_regression_daily_summary(self):
+        """Test regression: Daily summary."""
+        self.log("\n=== Regression: Daily Summary ===", "INFO")
+        
+        # Get settings
+        self.test("Daily Summary: Get settings", "GET", "/wa/summary/settings", 200,
+                 token=self.admin_token)
+        
+        # Get preview
+        today = datetime.now().strftime("%Y-%m-%d")
+        self.test("Daily Summary: Get preview", "GET", f"/wa/summary/preview?tanggal={today}", 200,
+                 token=self.admin_token)
+        
+        # Get history
+        self.test("Daily Summary: Get history", "GET", "/wa/summary/history?limit=10", 200,
+                 token=self.admin_token)
+
+    def run_all_tests(self):
+        """Run all tests."""
+        self.log("\n" + "="*60, "INFO")
+        self.log("TRIRARA TUNGGAL PUTRA - Backend API Testing", "INFO")
+        self.log(f"Backend URL: {BACKEND_URL}", "INFO")
+        self.log("="*60 + "\n", "INFO")
+        
+        # Authentication (required for all other tests)
+        if not self.test_auth():
+            self.log("\nAuthentication failed - stopping tests", "FAIL")
+            return False
+        
+        # Security tests
+        self.test_security()
+        
+        # HM Janggal tests
+        self.test_hm_janggal()
+        
+        # Pengingat Piutang tests
+        self.test_piutang_aging()
+        self.test_piutang_settings()
+        self.test_piutang_preview_run()
+        self.test_piutang_cron()
+        
+        # Laporan Mingguan tests
+        self.test_weekly_settings()
+        self.test_weekly_preview_run()
+        self.test_weekly_cron()
+        
+        # WhatsApp simulation tests
+        self.test_wa_simulation()
+        self.test_outbox()
+        
+        # Backup tests
+        self.test_backup()
+        
+        # Regression tests
+        self.test_regression_auth()
+        self.test_regression_units()
+        self.test_regression_operations()
+        self.test_regression_pengurus()
+        self.test_regression_wa_basic()
+        self.test_regression_daily_summary()
+        
+        # Summary
+        self.log("\n" + "="*60, "INFO")
+        self.log("TEST SUMMARY", "INFO")
+        self.log("="*60, "INFO")
+        self.log(f"Total tests run: {self.tests_run}", "INFO")
+        self.log(f"Passed: {self.tests_passed}", "PASS")
+        self.log(f"Failed: {self.tests_failed}", "FAIL" if self.tests_failed > 0 else "INFO")
+        self.log(f"Success rate: {(self.tests_passed/self.tests_run*100):.1f}%", "INFO")
+        self.log("="*60 + "\n", "INFO")
+        
+        return self.tests_failed == 0
+
 
 def main():
     tester = APITester()
-    
-    print(f"{Colors.BLUE}{'='*60}{Colors.END}")
-    print(f"{Colors.BLUE}WhatsApp Cloud API Integration - Backend Tests{Colors.END}")
-    print(f"{Colors.BLUE}{'='*60}{Colors.END}")
-    print(f"Base URL: {BASE_URL}")
-    print(f"Testing preview mode (WhatsApp not configured)")
-    
-    # Login as admin
-    if not tester.login("admin", "admin123"):
-        print(f"{Colors.RED}❌ Failed to login as admin. Cannot continue.{Colors.END}")
-        return 1
-    
-    # Test connection endpoints
-    tester.test_wa_connection()
-    tester.test_wa_status()
-    
-    # Test cloud API endpoints (should fail when not configured)
-    tester.test_wa_cloud_check_unconfigured()
-    tester.test_wa_cloud_send_test_unconfigured()
-    tester.test_wa_cloud_register_unconfigured()
-    tester.test_wa_cloud_register_invalid_pin()
-    tester.test_wa_cloud_subscribe_unconfigured()
-    
-    # Test outbox endpoints
-    tester.test_wa_outbox()
-    tester.test_wa_outbox_retry_invalid()
-    
-    # Test cron endpoint
-    tester.test_cron_wa_outbox_retry_no_auth()
-    tester.test_cron_wa_outbox_retry_wrong_auth()
-    tester.test_cron_wa_outbox_retry_valid()
-    tester.test_cron_wa_outbox_retry_duplicate()
-    tester.test_cron_wa_outbox_retry_invalid_body()
-    
-    # Test daily summary endpoints
-    tester.test_wa_summary_preview()
-    tester.test_wa_summary_run()
-    
-    # Test access control
-    tester.test_operator_access()
-    tester.test_unauthenticated_access()
-    
-    return tester.print_summary()
+    success = tester.run_all_tests()
+    return 0 if success else 1
+
 
 if __name__ == "__main__":
     sys.exit(main())

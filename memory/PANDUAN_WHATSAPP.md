@@ -3,6 +3,7 @@
 Semua waktu dalam WITA (Asia/Makassar). Panduan ini juga tampil di aplikasi: Kotak Masuk WA → tab **Koneksi WhatsApp**.
 
 ## Status saat ini
+- **DITUNDA atas instruksi pemilik** — jangan konfigurasi Meta/webhook/nomor asli sebelum ada persetujuan eksplisit.
 - Kode integrasi sudah siap. **WhatsApp BELUM terhubung**: kredensial Meta belum diisi dan uji kirim-terima dengan nomor asli belum dilakukan.
 - Sampai Secrets diisi, semua pesan keluar disimpan sebagai **simulasi** (tab Pesan Keluar).
 

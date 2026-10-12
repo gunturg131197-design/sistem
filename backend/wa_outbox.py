@@ -146,6 +146,11 @@ class Outbox:
         if not to:
             return {**base, "status": "skipped", "error": "Nomor tujuan kosong"}
         if not wa_configured():
+            prev = await self.db.wa_outbox.find_one({"logical_key": dedupe_key, "status": "simulated"}, {"_id": 0})
+            if prev:
+                await self._audit("wa_deduped", actor, f"{label or kind} → +{to} tidak dikirim ulang (simulasi sebelumnya {prev.get('created_at', '')[:16]})",
+                                  {"outbox_id": prev.get("id"), **ref})
+                return {**prev, "deduped": True}
             doc = {**base, "dedupe_key": f"sim:{base['id']}", "logical_key": dedupe_key, "status": "simulated",
                    "error": "WhatsApp belum dikonfigurasi — pesan disimpan sebagai simulasi"}
             await self.db.wa_outbox.insert_one(doc)

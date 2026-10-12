@@ -20,10 +20,11 @@ export const AUDIT_LABEL = {
   reply_sent: "Balasan WA terkirim", reply_failed: "Balasan WA gagal", settings_changed: "Pengaturan diubah", summary_run: "Ringkasan harian",
   wa_sent: "WA terkirim ke Meta", wa_failed: "WA gagal terkirim", wa_simulated: "WA simulasi", wa_deduped: "WA tidak dikirim ganda", wa_retry: "WA kirim ulang",
   wa_delivery_failed: "WA gagal diantar", wa_connection_verified: "Koneksi terverifikasi", wa_check: "Tes koneksi", wa_register: "Daftar nomor",
-  wa_subscribe: "Langganan webhook", outbox_retry_run: "Retry terjadwal", text_received: "Pesan teks masuk", received_error: "Gagal unduh gambar", webhook_error: "Webhook error",
+  wa_subscribe: "Langganan webhook", hm_anomaly: "HM janggal terdeteksi", hm_anomaly_confirmed: "HM janggal dikonfirmasi admin",
+  reminder_run: "Pengingat piutang", reminder_settings: "Pengaturan pengingat", weekly_run: "Laporan mingguan", simulated_inbound: "Simulasi pesan masuk", outbox_retry_run: "Retry terjadwal", text_received: "Pesan teks masuk", received_error: "Gagal unduh gambar", webhook_error: "Webhook error",
 };
-const AUDIT_TONE = { auto_approved: "text-emerald-400", approved: "text-emerald-400", auto_blocked: "text-primary", rejected: "text-accent", ai_error: "text-accent", reply_failed: "text-accent", deleted: "text-accent", wa_failed: "text-accent", wa_delivery_failed: "text-accent", received_error: "text-accent", wa_sent: "text-emerald-400", wa_connection_verified: "text-emerald-400" };
-const fmt = (s) => (s ? new Date(s).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "-");
+const AUDIT_TONE = { auto_approved: "text-emerald-400", approved: "text-emerald-400", auto_blocked: "text-primary", rejected: "text-accent", ai_error: "text-accent", reply_failed: "text-accent", deleted: "text-accent", wa_failed: "text-accent", hm_anomaly: "text-accent", hm_anomaly_confirmed: "text-primary", wa_delivery_failed: "text-accent", received_error: "text-accent", wa_sent: "text-emerald-400", wa_connection_verified: "text-emerald-400" };
+const fmt = (s) => (s ? new Date(s).toLocaleString("id-ID", { timeZone: "Asia/Makassar", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) + " WITA" : "-");
 
 export function AuditList({ rows, compact = false, testid = "wa-audit-list" }) {
   if (!rows.length) return <p className="text-xs font-mono text-muted-foreground p-4">// Belum ada riwayat</p>;
@@ -60,13 +61,14 @@ export function AutomationTab() {
   const save = async () => {
     setSaving(true);
     try {
-      const { data } = await api.put("/wa/auto-settings", { transfer_enabled: cfg.transfer_enabled, hm_enabled: cfg.hm_enabled, min_confidence: Number(cfg.min_confidence) });
+      const { data } = await api.put("/wa/auto-settings", { transfer_enabled: cfg.transfer_enabled, hm_enabled: cfg.hm_enabled, min_confidence: Number(cfg.min_confidence),
+        hm_spike_check: !!cfg.hm_spike_check, hm_max_per_day: Number(cfg.hm_max_per_day) });
       setCfg((c) => ({ ...c, ...data })); toast.success("Pengaturan otomatis tersimpan"); loadAudit();
     } catch (e) { toast.error(e?.response?.data?.detail || "Gagal menyimpan"); }
     finally { setSaving(false); }
   };
   const rules = ["Keyakinan AI ≥ batas yang diatur (minimal 90%)", "Unit alat berat dikenali dari keterangan / kontak", "Nominal transfer atau angka HM terbaca",
-    "No. Ref transfer terbaca & belum pernah tercatat", "Tidak ada peringatan (HM mundur, operator tidak dikenali, dll.)"];
+    "No. Ref transfer terbaca & belum pernah tercatat", "Tidak ada peringatan (operator tidak dikenali, dll.)", "HM tidak janggal (tidak turun, tidak melonjak, terbaca jelas)"];
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-4" data-testid="wa-automation-tab">
@@ -85,6 +87,20 @@ export function AutomationTab() {
               <Input data-testid="wa-auto-threshold" type="number" min={90} max={100} step={1} className="rounded-sm mt-1.5 font-mono w-32"
                 value={Math.round(Number(cfg.min_confidence) * 100)} onChange={(e) => setCfg({ ...cfg, min_confidence: Number(e.target.value) / 100 })} />
               <p className="font-mono text-[10px] text-muted-foreground mt-1">Minimal 90%. Di bawah batas → antrean verifikasi manual.</p>
+            </div>
+            <div className="border border-accent/40 p-3 space-y-3" data-testid="wa-hm-anomaly-settings">
+              <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-accent">// Peringatan HM Janggal</p>
+              <p className="text-xs text-muted-foreground">Selalu aktif: HM turun, HM melebihi laporan sesudahnya, angka/foto tidak terbaca, tanggal masa depan. Item janggal tidak pernah disimpan otomatis.</p>
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="hm_spike_check" className="text-sm cursor-pointer">Deteksi lonjakan HM tidak wajar</Label>
+                <Switch id="hm_spike_check" data-testid="wa-hm-spike-check" checked={!!cfg.hm_spike_check} onCheckedChange={(v) => setCfg({ ...cfg, hm_spike_check: v })} />
+              </div>
+              <div>
+                <Label className={lbl}>Batas jam kerja per hari</Label>
+                <Input data-testid="wa-hm-max-per-day" type="number" min={1} max={24} step={0.5} disabled={!cfg.hm_spike_check} className="rounded-sm mt-1.5 font-mono w-32"
+                  value={cfg.hm_max_per_day ?? 20} onChange={(e) => setCfg({ ...cfg, hm_max_per_day: e.target.value })} />
+                <p className="font-mono text-[10px] text-muted-foreground mt-1">Kenaikan HM &gt; batas × jumlah hari sejak laporan terakhir → verifikasi manual. ({cfg.hm_flag_count ?? 0} item janggal menunggu)</p>
+              </div>
             </div>
             <Button data-testid="wa-auto-save" disabled={saving} onClick={save} className="w-full rounded-sm bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"><FloppyDiskIcon size={16} weight="bold" className="mr-2" /> {saving ? "Menyimpan…" : "Simpan Pengaturan"}</Button>
             <div className="grid grid-cols-2 border border-border">
@@ -110,7 +126,12 @@ export function AutomationTab() {
               <SelectItem value="auto_blocked">Masuk verifikasi manual</SelectItem>
               <SelectItem value="rejected,deleted">Ditolak / dihapus</SelectItem>
               <SelectItem value="ai_error,reply_failed">Error</SelectItem>
+              <SelectItem value="hm_anomaly,hm_anomaly_confirmed">HM janggal</SelectItem>
               <SelectItem value="summary_run">Ringkasan harian</SelectItem>
+              <SelectItem value="reminder_run,reminder_sent,reminder_skipped">Pengingat piutang</SelectItem>
+              <SelectItem value="weekly_run">Laporan mingguan</SelectItem>
+              <SelectItem value="wa_simulated,wa_sent,wa_failed,wa_deduped,wa_retry">Pesan keluar</SelectItem>
+              <SelectItem value="simulated_inbound,text_received,received">Pesan masuk</SelectItem>
               <SelectItem value="settings_changed">Perubahan pengaturan</SelectItem>
             </SelectContent>
           </Select>

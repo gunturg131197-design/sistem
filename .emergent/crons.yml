@@ -14,3 +14,19 @@ crons:
     endpoint: "{{BASE_URL}}/api/cron/wa-outbox-retry"
     method: POST
     enabled: true
+  - name: wa-piutang-reminder
+    description: "Cek tiap jam (WITA) apakah waktunya mengirim Pengingat Piutang sesuai pengaturan (maks 1x per hari)"
+    cron: "0 * * * *"
+    timezone: "Asia/Makassar"
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    endpoint: "{{BASE_URL}}/api/cron/piutang-reminder"
+    method: POST
+    enabled: true
+  - name: wa-weekly-owner-report
+    description: "Laporan Mingguan Pemilik setiap Senin 08:00 WITA (minggu sebelumnya)"
+    cron: "0 8 * * 1"
+    timezone: "Asia/Makassar"
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    endpoint: "{{BASE_URL}}/api/cron/weekly-report"
+    method: POST
+    enabled: true
