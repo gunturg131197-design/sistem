@@ -85,7 +85,7 @@ export function ConnectionTab({ onChanged }) {
   const [mode, setMode] = useState("text");
   const [text, setText] = useState("Pesan uji dari aplikasi TRIRARA TUNGGAL PUTRA.");
   const [pin, setPin] = useState("");
-  const webhook = `${process.env.REACT_APP_BACKEND_URL}/api/whatsapp/webhook`;
+  const webhook = `${(process.env.REACT_APP_BACKEND_URL || window.location.origin).replace(/\/+$/, "")}/api/whatsapp/webhook`;
   const privacy = `${window.location.origin}/kebijakan-privasi`;
   const load = async () => {
     try { const { data } = await api.get("/wa/connection"); setSt(data); setCheck(data.phone_check || null); onChanged && onChanged(data); }

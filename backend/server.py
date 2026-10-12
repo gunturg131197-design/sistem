@@ -24,7 +24,21 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # Database: MariaDB (lihat mariadb_store.py & db_schema.py). Koneksi dari MARIADB_URL atau MARIADB_HOST/PORT/USER/PASSWORD/DATABASE.
-db = Store(build_url_from_env(dict(os.environ)))
+_DB_URL = build_url_from_env(dict(os.environ))
+db = Store(_DB_URL)
+
+
+def _safe_target(url: str) -> str:
+    try:
+        from sqlalchemy.engine import make_url
+        u = make_url(url)
+        return f"{u.username}@{u.host}:{u.port or 3306}/{u.database}"
+    except Exception:  # noqa: BLE001
+        return "(URL MariaDB tidak valid)"
+
+
+# Status boot: startup berjalan di background agar HTTP (healthcheck/Traefik) langsung hidup walau DB belum siap
+BOOT = {"ready": False, "db_error": "", "db_attempts": 0, "target": _safe_target(_DB_URL), "task": None}
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -39,21 +53,27 @@ async def _init_mariadb():
     # Khusus preview Emergent: nyalakan MariaDB lokal otomatis bila mati (pod restart). Tidak dipakai di Coolify.
     autostart = os.environ.get("PREVIEW_MARIADB_AUTOSTART", "") in ("1", "true", "yes")
     started = False
-    tries = 150 if autostart else 30
-    for attempt in range(tries):
+    lg.info(f"[mariadb] target koneksi: {BOOT['target']}")
+    attempt = 0
+    # Coba terus (berjalan di background, HTTP server tetap hidup) — status terlihat di /api/health
+    while True:
+        attempt += 1
         try:
             await db.init_schema()
             lg.info(f"[mariadb] skema siap ({db.name})")
+            BOOT["db_error"] = ""
             return
         except Exception as e:  # noqa: BLE001
-            lg.warning(f"[mariadb] belum siap (percobaan {attempt + 1}/{tries}): {type(e).__name__}: {str(e)[:160]}")
+            msg = f"{type(e).__name__}: {str(e).splitlines()[0][:220]}"
+            BOOT["db_error"], BOOT["db_attempts"] = msg, attempt
+            lg.warning(f"[mariadb] belum bisa terhubung ke {BOOT['target']} (percobaan {attempt}): {msg} — "
+                       "periksa DB_HOST / DB_PORT / DB_DATABASE / DB_USERNAME / DB_PASSWORD dan network Coolify")
             script = Path("/app/scripts/preview_mariadb.sh")
             if autostart and not started and script.exists():
                 started = True
                 lg.warning("[mariadb] menjalankan scripts/preview_mariadb.sh (preview lokal)")
                 _sp.Popen(["bash", str(script)], stdout=open("/tmp/preview_mariadb.log", "a"), stderr=_sp.STDOUT, start_new_session=True)
-            await _asyncio.sleep(2)
-    raise RuntimeError("Tidak bisa terhubung ke MariaDB — periksa DB_HOST / DB_PORT / DB_DATABASE / DB_USERNAME / DB_PASSWORD (atau MARIADB_URL)")
+            await _asyncio.sleep(2 if attempt < 15 else 5)
 
 
 @app.on_event("startup")
@@ -1333,12 +1353,23 @@ app.include_router(build_bonus_router(db, require_admin, next_bukti))
 
 @app.get("/api/health")
 async def health():
-    """Healthcheck untuk Docker/Coolify: cek koneksi MariaDB."""
+    """Readiness untuk Coolify/diagnosa: cek koneksi MariaDB + status startup (tanpa membocorkan password)."""
+    info = {"database": "mariadb", "target": BOOT["target"], "startup_ready": BOOT["ready"]}
     try:
         await db.ping()
-        return {"status": "ok", "database": "mariadb", "db": db.name}
+        return {"status": "ok", "db": db.name, **info}
     except Exception as e:  # noqa: BLE001
-        return JSONResponse({"status": "error", "database": "mariadb", "detail": type(e).__name__}, status_code=503)
+        detail = BOOT["db_error"] or f"{type(e).__name__}: {str(e).splitlines()[0][:220]}"
+        return JSONResponse({"status": "error", **info, "detail": detail, "attempts": BOOT["db_attempts"],
+                             "hint": "Periksa DB_HOST (internal host MariaDB di Coolify), DB_PORT, DB_DATABASE, "
+                                     "DB_USERNAME, DB_PASSWORD, dan pastikan app & database satu network."},
+                            status_code=503)
+
+
+@app.get("/api/health/live")
+async def health_live():
+    """Liveness untuk HEALTHCHECK Docker: proses hidup (selalu 200). Status DB lihat /api/health."""
+    return {"status": "alive", "startup_ready": BOOT["ready"]}
 
 
 # ---------- Frontend React (build) disajikan dari container yang sama (Dockerfile root) ----------
@@ -1434,4 +1465,40 @@ async def _backfill_kas_keluar():
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    t = BOOT.get("task")
+    if t and not t.done():
+        t.cancel()
     await db.close()
+
+
+# ---------- Startup non-blocking ----------
+# Semua handler startup di atas (init skema MariaDB → migrasi Mongo → index WA → admin awal → bonus → backfill kas)
+# dijalankan BERURUTAN di background. HTTP langsung listen sehingga healthcheck Docker lolos & Traefik/Coolify
+# tidak menampilkan "no available server" saat DB belum siap; error DB terbaca di /api/health dan log.
+_STARTUP_HANDLERS = list(app.router.on_startup)
+app.router.on_startup.clear()
+
+
+async def _run_startup_sequence():
+    for fn in _STARTUP_HANDLERS:
+        try:
+            await fn()
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"[startup] {getattr(fn, '__name__', fn)} gagal: {type(e).__name__}: {e}")
+    BOOT["ready"] = True
+    logger.info("[startup] semua tugas startup selesai — aplikasi siap")
+
+
+@app.on_event("startup")
+async def _start_background_boot():
+    import asyncio as _asyncio
+    BOOT["task"] = _asyncio.create_task(_run_startup_sequence())
+
+
+@app.middleware("http")
+async def _db_not_ready_guard(request, call_next):
+    p = request.url.path
+    if not BOOT["ready"] and p.startswith("/api/") and not p.startswith("/api/health"):
+        return JSONResponse({"detail": "Server sedang menyiapkan database, coba lagi sebentar. Status: /api/health"},
+                            status_code=503, headers={"Retry-After": "5"})
+    return await call_next(request)
