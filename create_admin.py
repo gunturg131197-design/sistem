@@ -3,7 +3,7 @@
 Create admin and operator users for testing
 """
 import asyncio
-from motor.motor_asyncio import AsyncIOMotorClient
+import sys
 from dotenv import load_dotenv
 from pathlib import Path
 import os
@@ -11,11 +11,12 @@ import bcrypt
 from datetime import datetime, timezone
 
 ROOT_DIR = Path(__file__).parent / "backend"
+sys.path.insert(0, str(ROOT_DIR))
 load_dotenv(ROOT_DIR / '.env')
 
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+from mariadb_store import Store, build_url_from_env  # noqa: E402
+
+db = Store(build_url_from_env(dict(os.environ)))  # MariaDB
 
 
 def hash_password(password: str) -> str:
@@ -75,7 +76,7 @@ async def create_users():
         await db.users.insert_one(operator_doc)
         print("Created operator user (username: budi, password: budi123)")
     
-    client.close()
+    await db.close()
 
 
 if __name__ == "__main__":

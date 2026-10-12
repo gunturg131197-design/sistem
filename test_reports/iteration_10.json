@@ -1,0 +1,113 @@
+{
+  "summary": "FULL REGRESSION testing completed for MongoDB → MariaDB migration. All 28 tables migrated successfully. Backend APIs: 121/123 tests passed (98.4%). Frontend: All pages load correctly, login/navigation working. Data verified in MariaDB via CLI. Backup API correctly returns 'MariaDB' engine.",
+  "backend_issues": {
+    "critical_bugs": [],
+    "flaky_endpoints": [],
+    "pre_existing_data_dependency_failures": [
+      {
+        "test": "Approve Hour Meter (backend_wa_test.py)",
+        "issue": "400 error: 'Pilih unit terlebih dahulu' - requires unit to be selected",
+        "impact": "Pre-existing data-dependency issue, also fails on Mongo baseline",
+        "fix_priority": "LOW"
+      },
+      {
+        "test": "Units kode_wa Field (backend_wa_test.py)",
+        "issue": "Unit EX-01 not found - expects seeded unit",
+        "impact": "Pre-existing data-dependency issue, also fails on Mongo baseline",
+        "fix_priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "HelpPage - Backup & Pemulihan tab",
+        "issue": "MariaDB badge (data-testid='backup-db-engine') not rendering in UI despite being implemented in code and API returning correct data",
+        "selector": "[data-testid='backup-db-engine']",
+        "fix_priority": "LOW",
+        "note": "Backend API correctly returns {\"database\": {\"engine\": \"MariaDB\", \"name\": \"trirara\"}}. Badge implementation exists in HelpPage.jsx line 65. Likely async loading issue."
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "Auth: Login (admintest/admin123, budi/budi123), /auth/me, logout, role checks",
+    "Security: Operator blocked from admin endpoints (403), unauthenticated access blocked (401)",
+    "HM Janggal: Settings CRUD, validation, inbox filtering",
+    "Piutang Aging: GET endpoint, reminder settings CRUD with validation",
+    "Piutang Reminder: Preview, manual run, history, cron endpoints with dedupe",
+    "Weekly Report: Settings CRUD, preview, manual run, history, cron endpoints",
+    "WhatsApp Simulation: Inbound text/image, validation, outbox list",
+    "Backup: GET /api/admin/backup/info returns engine='MariaDB', name='trirara', 27 collections",
+    "Bonus Admin: Authorization, GET all/filtered, settings CRUD with validation, history",
+    "Finance: Kas Masuk/Keluar CRUD with auto-numbering (KM-TTP-xxx, BK-TTP-xxx, KK-TTP-xxx)",
+    "Finance: Sparepart auto-creates BK kas keluar, delete removes it",
+    "Finance: Payroll auto-creates KK kas keluar (kasbon + gaji_bersih), delete removes it",
+    "Finance: Surat Keluar auto-numbering SP/TTP/xxx/ROMAN/YEAR",
+    "Finance: Invoice auto-numbering INV/TTP/xxx/ROMAN/YEAR",
+    "Finance: Summary endpoint with 12 months breakdown",
+    "Arsip: Report number issuance (LP/TTP/xxx/ROMAN/YEAR), sequential numbering, archive list sorted by seq DESC",
+    "WhatsApp: Upload transfer/hour meter images, AI processing (Gemini), approve creates Kas Masuk, duplicate detection, reject/reprocess, contacts CRUD",
+    "WhatsApp: Media retrieval (LONGBLOB storage), draft updates, operator permissions",
+    "MariaDB CLI: All 28 tables exist, users table has 3 records, report_archive has 17 records, proper column types (DATE, DOUBLE, BIGINT, VARCHAR, LONGTEXT, LONGBLOB)",
+    "Frontend: Login page loads, username/password authentication works",
+    "Frontend: Dashboard loads with stats (Total Jam Kerja, Total Cars Produksi, Biaya Sparepart, Unit Aktif)",
+    "Frontend: Navigation to all pages works (Dashboard, Unit Registry, Ops Report, Payroll, Sparepart, Laporan, Keuangan, Bonus Admin, Kotak Masuk WA, Pengurus, Operators, Bantuan & Backup)",
+    "Frontend: Unit Registry page loads with table and 'Tambah Unit' button",
+    "Frontend: Ops Report page loads with table and 'Laporan Baru' button",
+    "Frontend: Keuangan page loads with tabs (Dashboard, Kas Masuk, Kas Keluar, Invoice, Surat Masuk, Surat Keluar, Rekap Bulanan) and charts"
+  ],
+  "test_report_links": [
+    "/app/backend_test.py",
+    "/app/backend_finance_test.py",
+    "/app/backend_test_arsip.py",
+    "/app/backend_wa_test.py",
+    "/tmp/backend_test_output.txt",
+    "/tmp/backend_finance_test_output.txt",
+    "/tmp/backend_test_arsip_output.txt",
+    "/tmp/backend_wa_test_output.txt"
+  ],
+  "action_item_for_main_agent": "",
+  "updated_files": [],
+  "success_percentage": {
+    "backend_auth": "100%",
+    "backend_hm_janggal": "100%",
+    "backend_piutang": "100%",
+    "backend_weekly_report": "100%",
+    "backend_whatsapp": "87.5% (14/16 - 2 pre-existing data-dependency failures)",
+    "backend_backup": "100%",
+    "backend_bonus_admin": "100%",
+    "backend_finance": "100% (36/36)",
+    "backend_arsip": "100% (3/3)",
+    "backend_overall": "98.4% (121/123)",
+    "frontend_login": "100%",
+    "frontend_navigation": "100%",
+    "frontend_pages_load": "100%",
+    "mariadb_verification": "100%",
+    "overall": "99.2%"
+  },
+  "should_call_test_agent_after_fix": "false",
+  "should_main_agent_test_itself": "true",
+  "mariadb_verification": {
+    "database_engine": "MariaDB",
+    "database_name": "trirara",
+    "tables_count": 28,
+    "tables_verified": [
+      "users (3 records: admintest, admin, budi)",
+      "report_archive (17 records with sequential numbering)",
+      "units (0 records - empty as expected)",
+      "operations (0 records - empty as expected)",
+      "All 28 tables: app_counters, app_settings, bonus_admin, cron_runs, invoices, kas_keluar, kas_masuk, operations, payroll, pengurus_excavator, report_archive, report_extras, spareparts, surat_keluar, surat_masuk, units, user_sessions, users, wa_audit, wa_contacts, wa_inbox, wa_last_inbound, wa_media, wa_outbox, wa_reminders, wa_seen_messages, wa_summaries, wa_weekly"
+    ],
+    "column_types_verified": "DATE (tanggal), DOUBLE (total_jam, kredit, debit), BIGINT (_pk, seq), VARCHAR (user_id, username, role), LONGTEXT (_extra), LONGBLOB (wa_media.data)",
+    "backup_api_verified": "GET /api/admin/backup/info returns {\"database\": {\"engine\": \"MariaDB\", \"name\": \"trirara\"}, \"collections\": 27}"
+  },
+  "test_environment": {
+    "backend_url": "https://admin-bonus-unit.preview.emergentagent.com/api",
+    "frontend_url": "https://admin-bonus-unit.preview.emergentagent.com",
+    "mariadb_url": "mysql+asyncmy://trirara:trirara_dev@127.0.0.1:3306/trirara",
+    "mariadb_cli": "mariadb -uroot --socket=/run/mysqld/mysqld.sock trirara",
+    "test_credentials": "admintest/admin123 (admin), budi/budi123 (operator)"
+  }
+}

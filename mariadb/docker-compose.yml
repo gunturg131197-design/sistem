@@ -1,0 +1,35 @@
+# ============================================================
+# EXCAVA.OPS / TRIRARA - MariaDB standalone untuk Coolify (Opsi B)
+# Deploy sebagai resource "Docker Compose" tersendiri di Coolify (atau pakai
+# menu Coolify: + New -> Database -> MariaDB).
+# Backend (app terpisah) terhubung lewat jaringan Docker Coolify:
+#   MARIADB_HOST=<nama container/host MariaDB>  MARIADB_PORT=3306
+#   MARIADB_DATABASE / MARIADB_USER / MARIADB_PASSWORD  (sama seperti di bawah)
+# ============================================================
+
+services:
+  mariadb:
+    image: mariadb:11.4
+    restart: unless-stopped
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci", "--max-allowed-packet=64M"]
+    environment:
+      # GANTI semua password di Environment Variables Coolify!
+      - MARIADB_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD:-ubah_password_root_ini}
+      - MARIADB_DATABASE=${MARIADB_DATABASE:-trirara}
+      - MARIADB_USER=${MARIADB_USER:-trirara}
+      - MARIADB_PASSWORD=${MARIADB_PASSWORD:-ubah_password_ini}
+    volumes:
+      # Data persisten — jangan hapus volume ini agar data tidak hilang.
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    # (Opsional) buka port untuk HeidiSQL/DBeaver dari luar. HATI-HATI: lebih aman tetap internal.
+    # ports:
+    #   - "3306:3306"
+
+volumes:
+  mariadb_data:

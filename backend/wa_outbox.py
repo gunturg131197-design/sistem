@@ -1,7 +1,7 @@
 """Pengiriman WhatsApp terpusat (outbox) — satu jalur untuk SEMUA pesan keluar.
 
 Jaminan:
-- Anti kirim ganda: setiap pesan punya `dedupe_key` unik (unique index Mongo). Pesan yang sudah
+- Anti kirim ganda: setiap pesan punya `dedupe_key` unik (unique index MariaDB). Pesan yang sudah
   terkirim / sedang dikirim dengan kunci yang sama tidak akan dikirim lagi.
 - Retry aman: hanya untuk error yang PASTI belum sampai ke Meta (gagal koneksi) atau ditolak sementara
   (HTTP 429 / 5xx). Timeout setelah request terkirim = status tidak pasti -> TIDAK di-retry otomatis
@@ -23,7 +23,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import httpx
-from pymongo.errors import DuplicateKeyError
+from mariadb_store import DuplicateKeyError
 
 log = logging.getLogger("wa_outbox")
 logging.getLogger("httpx").setLevel(logging.WARNING)  # jangan catat URL request (bisa memuat URL media bertanda tangan)
