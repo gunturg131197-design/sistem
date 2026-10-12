@@ -34,6 +34,17 @@ Pindah data dari MongoDB lama: isi `MIGRATE_FROM_MONGO_URL` + `MIGRATE_FROM_MONG
 
 Opsi docker-compose di bawah ini tetap tersedia sebagai alternatif.
 
+### Troubleshooting cepat
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `no available server` (503 Traefik) | Container belum healthy / mati, atau Ports Exposes salah | Ports Exposes = `8000`; lihat tab **Logs** container. Setelah versi ini, container tetap hidup walau DB gagal |
+| `/api/health` → `"status":"error"` + `Name or service not known` | `DB_HOST` salah / beda network | Isi `DB_HOST` = *Internal host* MariaDB (bukan `localhost`, bukan `mariadb` kecuali memang namanya). Aktifkan **Connect to Predefined Network** di app & database |
+| `/api/health` → `Access denied for user` | `DB_USERNAME` / `DB_PASSWORD` tidak sama dengan resource MariaDB | Salin persis dari halaman database Coolify |
+| `/api/health` → `Unknown database` | `DB_DATABASE` salah | Samakan dengan "Initial Database" MariaDB |
+| `Bad Gateway` (502) | Ports Exposes ≠ `PORT` | Samakan keduanya (`8000`) |
+| Perubahan kode tidak terpakai | Coolify memakai image lama ("Build step skipped") | Klik **Redeploy** (bukan Restart) |
+
 ---
 
 
