@@ -1,5 +1,5 @@
 import React from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import {
   GaugeIcon,
@@ -11,10 +11,10 @@ import {
   HardHatIcon,
   ChartBarIcon,
   SignOutIcon,
-  BulldozerIcon,
 } from "@phosphor-icons/react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { BrandLockup, BrandMark } from "@/components/Brand";
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: GaugeIcon, testid: "nav-dashboard" },
@@ -30,25 +30,24 @@ const navItems = [
 export default function AppShell({ children }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const initials = (user?.name || "??").split(" ").map(s => s[0]).slice(0, 2).join("").toUpperCase();
+  const items = navItems.filter(n => !n.adminOnly || user?.role === "admin");
+  const current = items.find(i => i.to === location.pathname);
 
   return (
     <div className="min-h-screen bg-background text-foreground flex">
       {/* Sidebar */}
-      <aside className="hidden lg:flex w-64 shrink-0 border-r border-border flex-col bg-muted/40">
-        <div className="p-5 border-b border-border flex items-center gap-3">
-          <div className="h-9 w-9 bg-primary flex items-center justify-center">
-            <BulldozerIcon size={20} weight="fill" className="text-black" />
-          </div>
-          <div>
-            <p className="font-display font-black text-sm tracking-tighter">EXCAVA<span className="text-primary">.OPS</span></p>
-            <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground">Field Command v1.0</p>
-          </div>
+      <aside className="hidden lg:flex w-64 shrink-0 border-r border-border flex-col bg-card sticky top-0 h-screen">
+        <div className="h-1 brand-rail" />
+        <div className="px-5 py-5 border-b border-border" data-testid="app-sidebar-brand">
+          <BrandLockup size={34} testid="app-sidebar-brand" />
+          <p className="mt-3 font-mono text-[9px] uppercase tracking-[0.2em] text-primary">Heavy Equipment Reporting</p>
         </div>
 
-        <nav className="flex-1 p-3 space-y-1">
-          <p className="px-2 py-2 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">// Navigation</p>
-          {navItems.filter(n => !n.adminOnly || user?.role === "admin").map((item) => (
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+          <p className="px-2 py-2 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">// Navigasi</p>
+          {items.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -58,7 +57,7 @@ export default function AppShell({ children }) {
                 `flex items-center gap-3 px-3 py-2.5 text-sm font-medium border-l-2 ${
                   isActive
                     ? "bg-primary/10 border-primary text-primary"
-                    : "border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                    : "border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary"
                 }`
               }
             >
@@ -79,7 +78,7 @@ export default function AppShell({ children }) {
               <Badge
                 data-testid="current-user-role"
                 className={`rounded-sm text-[9px] font-mono uppercase tracking-widest px-1.5 py-0 ${
-                  user?.role === "admin" ? "bg-primary text-black" : "bg-secondary text-foreground"
+                  user?.role === "admin" ? "bg-primary text-primary-foreground hover:bg-primary" : "bg-secondary text-foreground hover:bg-secondary"
                 }`}
               >
                 {user?.role}
@@ -98,21 +97,26 @@ export default function AppShell({ children }) {
       </aside>
 
       {/* Mobile top nav */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-background border-b border-border flex items-center justify-between px-4 h-14">
-        <div className="flex items-center gap-2" onClick={() => navigate("/")}>
-          <div className="h-7 w-7 bg-primary flex items-center justify-center">
-            <BulldozerIcon size={16} weight="fill" className="text-black" />
-          </div>
-          <p className="font-display font-black text-sm">EXCAVA<span className="text-primary">.OPS</span></p>
+      <div className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-card border-b border-border">
+        <div className="h-0.5 brand-rail" />
+        <div className="flex items-center justify-between px-4 h-14">
+          <button className="flex items-center gap-2" onClick={() => navigate("/")} data-testid="app-mobile-header-logo">
+            <BrandMark size={26} />
+            <div className="text-left leading-none">
+              <p className="font-display font-black text-sm tracking-tight">TRIRARA</p>
+              <p className="font-mono text-[8px] uppercase tracking-[0.3em] text-muted-foreground mt-0.5">Tunggal Putra</p>
+            </div>
+          </button>
+          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-primary" data-testid="app-mobile-header-title">{current?.label || ""}</p>
+          <button onClick={logout} data-testid="logout-button-mobile" className="p-2 border border-border hover:border-accent hover:text-accent">
+            <SignOutIcon size={16} weight="bold" />
+          </button>
         </div>
-        <button onClick={logout} data-testid="logout-button-mobile" className="p-2 border border-border">
-          <SignOutIcon size={16} weight="bold" />
-        </button>
       </div>
 
       {/* Mobile bottom nav */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-background border-t border-border grid grid-cols-5">
-        {navItems.filter(n => !n.adminOnly || user?.role === "admin").slice(0, 5).map(item => (
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-card border-t border-border grid grid-cols-5">
+        {items.slice(0, 5).map(item => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -126,8 +130,8 @@ export default function AppShell({ children }) {
         ))}
       </div>
 
-      <main className="flex-1 min-w-0 pt-14 lg:pt-0 pb-20 lg:pb-0 relative">
-        <div className="p-6 lg:p-10 max-w-[1600px]">{children}</div>
+      <main className="flex-1 min-w-0 pt-16 lg:pt-0 pb-20 lg:pb-0 relative grid-bg">
+        <div className="p-6 lg:p-10 max-w-[1600px] animate-fade-up" key={location.pathname}>{children}</div>
       </main>
     </div>
   );

@@ -1,4 +1,4 @@
-# Excavator Operations Reporting System (EXCAVA.OPS)
+# TRIRARA TUNGGAL PUTRA — Sistem Pelaporan Alat Berat (dulu EXCAVA.OPS)
 
 ## Problem Statement
 Aplikasi sistem pelaporan untuk alat berat excavator. Fields: unit excavator, nomor lambung, serial number, hour meter awal/akhir, jumlah cars baru, tanggal cars, gaji operator, kasbon operator, nota penggantian sparepart, tanggal penggantian sparepart, total biaya penggantian sparepart per unit.
@@ -39,6 +39,16 @@ Aplikasi sistem pelaporan untuk alat berat excavator. Fields: unit excavator, no
 - Filter periode (bulan) di Laporan; Nomor laporan otomatis LP/TTP/{seq}/{romawi}/{tahun} (POST /api/reports/number, counter app_counters mulai 200)
 - Arsip Nomor Laporan: setiap nomor terbit disimpan (db.report_archive) & bisa ditelusuri via GET /api/reports/archive + dialog "Arsip Nomor" di halaman Laporan
 - Semua PDF memakai kop surat TRIRARA TUNGGAL PUTRA (portrait A4, header+footer tiap halaman) via src/lib/letterhead.js + exporters.js
+
+## Update (2026-10) — Rebrand + Format Laporan Hour Meter
+- Rebrand: EXCAVA.OPS -> TRIRARA TUNGGAL PUTRA; logo (mark transparan src/assets/logo-mark.png, logo penuh logo-full.jpg), favicon, title
+- Tema gelap navy (#0B1E2D/#022D42) + kuning (#FEC202) + merah (#EF3B2D); shadcn accent hover -> secondary
+- Data perusahaan permanen: src/lib/company.js (CV. TRIRARA TUNGGAL PUTRA)
+- Unit: + merek_type, pemilik_alat, nama_proyek, lokasi_proyek, pengawas_lapangan
+- Ops: + keterangan, downtime_jam, solar_liter, catatan_operator, kondisi_alat{mesin,sistem_hidrolik,ban_track,lampu,rem,kelistrikan:{status baik|tidak, keterangan}}; PATCH /api/operations/{id} (edit)
+- Report extras per unit+periode: GET/PUT /api/reports/extras (pengembalian_jam, lain_lain, keterangan_tambahan) -> db.report_extras
+- /api/reports/units menambah: data proyek/alat, total_downtime, total_solar, hari_operasional, kondisi_alat (terbaru), catatan_operator, extras
+- Engine laporan src/lib/hourMeter.js: Form Hour Meter (sesuai Hour Meter.docx) -> PDF (jsPDF), Excel (exceljs), Word (docx), per unit & semua unit, kop surat dari template docx (src/lib/letterhead.js), TTD Operator/Pengawas/Pimpinan
 
 ## Backlog (P1)
 - Photo attachment on nota sparepart

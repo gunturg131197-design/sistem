@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Backend API Test Suite for EXCAVA.OPS
-Tests sparepart multi-item, payroll per-jam, reports, and RBAC
+Backend API Test Suite for TRIRARA TUNGGAL PUTRA Hour Meter System
+Tests new Hour Meter fields, operations PATCH, reports extras, and all integrations
 """
 import requests
 import json
 from typing import Dict, Any, Optional
 
 # Base URL from frontend/.env
-BASE_URL = "https://operator-hours-log-1.preview.emergentagent.com/api"
+BASE_URL = "https://theme-logo-studio.preview.emergentagent.com/api"
 
 # Test credentials
 ADMIN_CREDS = {"username": "admin", "password": "admin123"}
@@ -35,17 +35,23 @@ def login(username: str, password: str) -> requests.Session:
     return session, user_data
 
 
-def test_sparepart_multi_item():
-    """Test 1: Sparepart multi-item with hm_service"""
-    print("\n=== TEST 1: SPAREPART MULTI-ITEM ===")
+def test_units_new_fields():
+    """Test 1: Units API with new Hour Meter fields"""
+    print("\n=== TEST 1: UNITS WITH NEW HOUR METER FIELDS ===")
     
-    # First, create a unit as admin
+    # Create unit with all new fields
     unit_payload = {
-        "unit_name": "CAT 320D",
-        "nomor_lambung": "EXC-001",
-        "serial_number": "SN123456",
-        "operator_id": test_data.get("operator_user_id", "user_op_seed01"),
-        "operator_name": "Budi Operator"
+        "unit_name": "TEST_Komatsu PC200",
+        "nomor_lambung": "TEST-EX-01",
+        "serial_number": "TEST-SN-12345",
+        "operator_id": test_data.get("operator_user_id"),
+        "operator_name": "Budi Operator",
+        "pengurus": "Pak Tono",
+        "merek_type": "Komatsu PC200-8",
+        "pemilik_alat": "CV. Trirara Tunggal Putra",
+        "nama_proyek": "Normalisasi Sungai Ciliwung",
+        "lokasi_proyek": "Jakarta Timur",
+        "pengawas_lapangan": "Ir. Bambang Sutrisno"
     }
     
     response = admin_session.post(f"{BASE_URL}/units", json=unit_payload)
@@ -55,256 +61,317 @@ def test_sparepart_multi_item():
     
     unit = response.json()
     test_data["unit_id"] = unit["id"]
-    print(f"✓ Created unit: {unit['unit_name']} - {unit['nomor_lambung']} (ID: {unit['id']})")
+    print(f"✓ Created unit: {unit['unit_name']} - {unit['nomor_lambung']}")
     
-    # Create sparepart with multi-item
-    sparepart_payload = {
-        "unit_id": test_data["unit_id"],
-        "nomor_nota": "NOTA-001",
-        "tanggal": "2025-07-01",
-        "hm_service": 250,
-        "items": [
-            {
-                "nama_sparepart": "Filter Oli",
-                "qty": 2,
-                "harga_satuan": 150000
-            },
-            {
-                "nama_sparepart": "Bucket Teeth",
-                "qty": 5,
-                "harga_satuan": 200000
-            }
-        ]
-    }
-    
-    response = admin_session.post(f"{BASE_URL}/spareparts", json=sparepart_payload)
-    if response.status_code != 200:
-        print(f"✗ Failed to create sparepart: {response.status_code} {response.text}")
-        return False
-    
-    sparepart = response.json()
-    test_data["sparepart_id"] = sparepart["id"]
-    
-    # Verify calculations
+    # Verify all new fields are returned
     errors = []
-    
-    # Check items
-    if len(sparepart.get("items", [])) != 2:
-        errors.append(f"Expected 2 items, got {len(sparepart.get('items', []))}")
-    
-    # Check item 1 total
-    item1 = sparepart["items"][0]
-    expected_total1 = 2 * 150000  # 300000
-    if item1.get("total") != expected_total1:
-        errors.append(f"Item 1 total: expected {expected_total1}, got {item1.get('total')}")
-    
-    # Check item 2 total
-    item2 = sparepart["items"][1]
-    expected_total2 = 5 * 200000  # 1000000
-    if item2.get("total") != expected_total2:
-        errors.append(f"Item 2 total: expected {expected_total2}, got {item2.get('total')}")
-    
-    # Check total biaya
-    expected_biaya = 300000 + 1000000  # 1300000
-    if sparepart.get("biaya") != expected_biaya:
-        errors.append(f"Total biaya: expected {expected_biaya}, got {sparepart.get('biaya')}")
-    
-    # Check hm_service
-    if sparepart.get("hm_service") != 250:
-        errors.append(f"HM service: expected 250, got {sparepart.get('hm_service')}")
-    
-    # Check nama_sparepart summary
-    if "Filter Oli" not in sparepart.get("nama_sparepart", "") or "Bucket Teeth" not in sparepart.get("nama_sparepart", ""):
-        errors.append(f"nama_sparepart summary missing item names: {sparepart.get('nama_sparepart')}")
+    expected_fields = ["merek_type", "pemilik_alat", "nama_proyek", "lokasi_proyek", "pengawas_lapangan"]
+    for field in expected_fields:
+        if field not in unit:
+            errors.append(f"Missing field: {field}")
+        elif unit[field] != unit_payload[field]:
+            errors.append(f"{field}: expected '{unit_payload[field]}', got '{unit[field]}'")
     
     if errors:
-        print("✗ Sparepart validation errors:")
+        print("✗ Unit field validation errors:")
         for err in errors:
             print(f"  - {err}")
         return False
     
-    print(f"✓ Sparepart created with correct calculations:")
-    print(f"  - Item 1: {item1['nama_sparepart']} x{item1['qty']} @ Rp{item1['harga_satuan']:,} = Rp{item1['total']:,}")
-    print(f"  - Item 2: {item2['nama_sparepart']} x{item2['qty']} @ Rp{item2['harga_satuan']:,} = Rp{item2['total']:,}")
-    print(f"  - Total biaya: Rp{sparepart['biaya']:,}")
-    print(f"  - HM service: {sparepart['hm_service']}")
+    print(f"✓ All new fields present and correct:")
+    print(f"  - Merek/Type: {unit['merek_type']}")
+    print(f"  - Pemilik Alat: {unit['pemilik_alat']}")
+    print(f"  - Nama Proyek: {unit['nama_proyek']}")
+    print(f"  - Lokasi Proyek: {unit['lokasi_proyek']}")
+    print(f"  - Pengawas Lapangan: {unit['pengawas_lapangan']}")
     
-    # GET spareparts and verify items[] is returned
-    response = admin_session.get(f"{BASE_URL}/spareparts")
+    # Test PATCH unit
+    patch_payload = {
+        **unit_payload,
+        "nama_proyek": "Pembangunan Jalan Tol",
+        "lokasi_proyek": "Bekasi"
+    }
+    
+    response = admin_session.patch(f"{BASE_URL}/units/{unit['id']}", json=patch_payload)
     if response.status_code != 200:
-        print(f"✗ Failed to get spareparts: {response.status_code}")
+        print(f"✗ Failed to patch unit: {response.status_code} {response.text}")
         return False
     
-    spareparts = response.json()
+    updated_unit = response.json()
+    if updated_unit["nama_proyek"] != "Pembangunan Jalan Tol":
+        print(f"✗ PATCH unit failed: nama_proyek not updated")
+        return False
+    
+    print(f"✓ PATCH unit successful: nama_proyek updated to '{updated_unit['nama_proyek']}'")
+    
+    # GET units and verify fields are returned
+    response = admin_session.get(f"{BASE_URL}/units")
+    if response.status_code != 200:
+        print(f"✗ Failed to get units: {response.status_code}")
+        return False
+    
+    units = response.json()
     found = False
-    for sp in spareparts:
-        if sp["id"] == test_data["sparepart_id"]:
+    for u in units:
+        if u["id"] == test_data["unit_id"]:
             found = True
-            if not sp.get("items") or len(sp["items"]) != 2:
-                print(f"✗ GET /spareparts did not return items[] array")
+            if not all(field in u for field in expected_fields):
+                print(f"✗ GET /units missing new fields")
                 return False
     
     if not found:
-        print(f"✗ Created sparepart not found in GET /spareparts")
+        print(f"✗ Created unit not found in GET /units")
         return False
     
-    print(f"✓ GET /spareparts returns items[] array correctly")
+    print(f"✓ GET /units returns all new fields correctly")
     return True
 
 
-def test_payroll_per_jam():
-    """Test 2: Payroll per-jam with hours endpoint"""
-    print("\n=== TEST 2: PAYROLL PER-JAM ===")
+def test_operations_new_fields():
+    """Test 2: Operations API with new Hour Meter fields"""
+    print("\n=== TEST 2: OPERATIONS WITH NEW HOUR METER FIELDS ===")
     
-    # Create operation as admin (10 hours)
+    # Create operation with all new fields
+    kondisi_alat = {
+        "mesin": {"status": "baik", "keterangan": "Mesin normal"},
+        "sistem_hidrolik": {"status": "baik", "keterangan": ""},
+        "ban_track": {"status": "tidak", "keterangan": "Track aus, perlu ganti"},
+        "lampu": {"status": "baik", "keterangan": ""},
+        "rem": {"status": "baik", "keterangan": ""},
+        "kelistrikan": {"status": "tidak", "keterangan": "Aki lemah"}
+    }
+    
     operation_payload = {
         "unit_id": test_data["unit_id"],
-        "tanggal": "2025-07-02",
-        "hour_meter_awal": 100,
-        "hour_meter_akhir": 110,
-        "jumlah_cars": 5,
-        "pengurus": "Pak Tono"
+        "tanggal": "2026-02-15",
+        "hour_meter_awal": 100.5,
+        "hour_meter_akhir": 108.5,
+        "jumlah_cars": 12,
+        "pengurus": "Pak Tono",
+        "keterangan": "Galian saluran, hujan 1 jam",
+        "downtime_jam": 1.5,
+        "solar_liter": 45.0,
+        "catatan_operator": "Track mulai aus, perlu pengecekan. Aki lemah, minta ganti.",
+        "kondisi_alat": kondisi_alat
     }
     
-    response = admin_session.post(f"{BASE_URL}/operations", json=operation_payload)
+    response = operator_session.post(f"{BASE_URL}/operations", json=operation_payload)
     if response.status_code != 200:
-        print(f"✗ Failed to create operation (admin): {response.status_code} {response.text}")
+        print(f"✗ Failed to create operation: {response.status_code} {response.text}")
         return False
     
-    op1 = response.json()
-    print(f"✓ Created operation as admin: {op1['total_jam']} jam (HM {op1['hour_meter_awal']}-{op1['hour_meter_akhir']})")
+    op = response.json()
+    test_data["operation_id"] = op["id"]
+    print(f"✓ Created operation: {op['tanggal']} - {op['total_jam']} jam")
     
-    # Create operation as budi (8 hours)
-    operation_payload2 = {
-        "unit_id": test_data["unit_id"],
-        "tanggal": "2025-07-03",
-        "hour_meter_awal": 110,
-        "hour_meter_akhir": 118,
-        "jumlah_cars": 3,
-        "pengurus": "Pak Tono"
-    }
-    
-    response = operator_session.post(f"{BASE_URL}/operations", json=operation_payload2)
-    if response.status_code != 200:
-        print(f"✗ Failed to create operation (budi): {response.status_code} {response.text}")
-        return False
-    
-    op2 = response.json()
-    print(f"✓ Created operation as budi: {op2['total_jam']} jam (HM {op2['hour_meter_awal']}-{op2['hour_meter_akhir']})")
-    
-    # GET /payroll/hours for budi on this unit
-    operator_id = test_data.get("operator_user_id")
-    response = admin_session.get(f"{BASE_URL}/payroll/hours", params={
-        "operator_id": operator_id,
-        "unit_id": test_data["unit_id"]
-    })
-    
-    if response.status_code != 200:
-        print(f"✗ Failed to get payroll hours: {response.status_code} {response.text}")
-        return False
-    
-    hours_before = response.json()
-    print(f"✓ Payroll hours before payment:")
-    print(f"  - total_jam_kerja: {hours_before['total_jam_kerja']}")
-    print(f"  - total_jam_dibayar: {hours_before['total_jam_dibayar']}")
-    print(f"  - jam_belum_dibayar: {hours_before['jam_belum_dibayar']}")
-    
-    # Verify total_jam_kerja matches budi's operations (8.0 hours)
-    expected_jam_kerja = 8.0  # Only budi's operation
-    if hours_before["total_jam_kerja"] != expected_jam_kerja:
-        print(f"✗ Expected total_jam_kerja={expected_jam_kerja}, got {hours_before['total_jam_kerja']}")
-        return False
-    
-    if hours_before["total_jam_dibayar"] != 0:
-        print(f"✗ Expected total_jam_dibayar=0, got {hours_before['total_jam_dibayar']}")
-        return False
-    
-    if hours_before["jam_belum_dibayar"] != expected_jam_kerja:
-        print(f"✗ Expected jam_belum_dibayar={expected_jam_kerja}, got {hours_before['jam_belum_dibayar']}")
-        return False
-    
-    # Create payroll
-    payroll_payload = {
-        "operator_id": operator_id,
-        "unit_id": test_data["unit_id"],
-        "periode": "2025-07",
-        "tarif_per_jam": 50000,
-        "jam_dibayar": 8,
-        "kasbon": 100000
-    }
-    
-    response = admin_session.post(f"{BASE_URL}/payroll", json=payroll_payload)
-    if response.status_code != 200:
-        print(f"✗ Failed to create payroll: {response.status_code} {response.text}")
-        return False
-    
-    payroll = response.json()
-    test_data["payroll_id"] = payroll["id"]
-    
-    # Verify payroll calculations
+    # Verify all new fields
     errors = []
     
-    expected_gaji = 8 * 50000  # 400000
-    if payroll.get("gaji") != expected_gaji:
-        errors.append(f"Gaji: expected {expected_gaji}, got {payroll.get('gaji')}")
+    if op.get("keterangan") != operation_payload["keterangan"]:
+        errors.append(f"keterangan mismatch")
     
-    expected_gaji_bersih = 400000 - 100000  # 300000
-    if payroll.get("gaji_bersih") != expected_gaji_bersih:
-        errors.append(f"Gaji bersih: expected {expected_gaji_bersih}, got {payroll.get('gaji_bersih')}")
+    if op.get("downtime_jam") != operation_payload["downtime_jam"]:
+        errors.append(f"downtime_jam: expected {operation_payload['downtime_jam']}, got {op.get('downtime_jam')}")
     
-    if payroll.get("jam_kerja") != expected_jam_kerja:
-        errors.append(f"Jam kerja snapshot: expected {expected_jam_kerja}, got {payroll.get('jam_kerja')}")
+    if op.get("solar_liter") != operation_payload["solar_liter"]:
+        errors.append(f"solar_liter: expected {operation_payload['solar_liter']}, got {op.get('solar_liter')}")
     
-    if not payroll.get("unit_label"):
-        errors.append("unit_label is empty")
+    if op.get("catatan_operator") != operation_payload["catatan_operator"]:
+        errors.append(f"catatan_operator mismatch")
+    
+    if not op.get("kondisi_alat"):
+        errors.append("kondisi_alat missing")
+    else:
+        # Check kondisi_alat structure
+        ka = op["kondisi_alat"]
+        if ka.get("mesin", {}).get("status") != "baik":
+            errors.append("kondisi_alat.mesin.status incorrect")
+        if ka.get("ban_track", {}).get("status") != "tidak":
+            errors.append("kondisi_alat.ban_track.status incorrect")
+        if "Track aus" not in ka.get("ban_track", {}).get("keterangan", ""):
+            errors.append("kondisi_alat.ban_track.keterangan missing")
+    
+    if op.get("total_jam") != 8.0:
+        errors.append(f"total_jam: expected 8.0, got {op.get('total_jam')}")
     
     if errors:
-        print("✗ Payroll validation errors:")
+        print("✗ Operation field validation errors:")
         for err in errors:
             print(f"  - {err}")
         return False
     
-    print(f"✓ Payroll created with correct calculations:")
-    print(f"  - Gaji: Rp{payroll['gaji']:,} (8 jam x Rp50,000)")
-    print(f"  - Kasbon: Rp{payroll['kasbon']:,}")
-    print(f"  - Gaji bersih: Rp{payroll['gaji_bersih']:,}")
-    print(f"  - Jam kerja snapshot: {payroll['jam_kerja']}")
-    print(f"  - Unit: {payroll['unit_label']}")
+    print(f"✓ All new operation fields present and correct:")
+    print(f"  - Keterangan: {op['keterangan']}")
+    print(f"  - Downtime: {op['downtime_jam']} jam")
+    print(f"  - Solar: {op['solar_liter']} liter")
+    print(f"  - Catatan Operator: {op['catatan_operator'][:50]}...")
+    print(f"  - Kondisi Alat: {len(op['kondisi_alat'])} items checked")
+    print(f"  - Total Jam: {op['total_jam']} (auto-calculated)")
     
-    # GET /payroll/hours again
-    response = admin_session.get(f"{BASE_URL}/payroll/hours", params={
-        "operator_id": operator_id,
-        "unit_id": test_data["unit_id"]
-    })
-    
-    if response.status_code != 200:
-        print(f"✗ Failed to get payroll hours after payment: {response.status_code}")
-        return False
-    
-    hours_after = response.json()
-    print(f"✓ Payroll hours after payment:")
-    print(f"  - total_jam_kerja: {hours_after['total_jam_kerja']}")
-    print(f"  - total_jam_dibayar: {hours_after['total_jam_dibayar']}")
-    print(f"  - jam_belum_dibayar: {hours_after['jam_belum_dibayar']}")
-    
-    # Verify hours updated correctly
-    if hours_after["total_jam_dibayar"] != 8.0:
-        print(f"✗ Expected total_jam_dibayar=8.0, got {hours_after['total_jam_dibayar']}")
-        return False
-    
-    if hours_after["jam_belum_dibayar"] != 0.0:
-        print(f"✗ Expected jam_belum_dibayar=0.0, got {hours_after['jam_belum_dibayar']}")
-        return False
-    
-    print(f"✓ Hours tracking updated correctly after payment")
     return True
 
 
-def test_reports():
-    """Test 3: Reports per unit endpoint"""
-    print("\n=== TEST 3: REPORTS PER UNIT ===")
+def test_operations_patch():
+    """Test 3: PATCH operations (operator can patch own ops)"""
+    print("\n=== TEST 3: PATCH OPERATIONS ===")
     
-    response = admin_session.get(f"{BASE_URL}/reports/units")
+    # Operator patches their own operation
+    patch_payload = {
+        "unit_id": test_data["unit_id"],
+        "tanggal": "2026-02-15",
+        "hour_meter_awal": 100.5,
+        "hour_meter_akhir": 110.0,  # Changed from 108.5
+        "jumlah_cars": 15,  # Changed from 12
+        "pengurus": "Pak Tono",
+        "keterangan": "Galian saluran, hujan 2 jam",  # Changed
+        "downtime_jam": 2.0,  # Changed from 1.5
+        "solar_liter": 50.0,  # Changed from 45.0
+        "catatan_operator": "Track aus, sudah diganti. Aki baru dipasang.",  # Changed
+        "kondisi_alat": {
+            "mesin": {"status": "baik", "keterangan": ""},
+            "sistem_hidrolik": {"status": "baik", "keterangan": ""},
+            "ban_track": {"status": "baik", "keterangan": "Track baru"},
+            "lampu": {"status": "baik", "keterangan": ""},
+            "rem": {"status": "baik", "keterangan": ""},
+            "kelistrikan": {"status": "baik", "keterangan": "Aki baru"}
+        }
+    }
+    
+    response = operator_session.patch(f"{BASE_URL}/operations/{test_data['operation_id']}", json=patch_payload)
+    if response.status_code != 200:
+        print(f"✗ Failed to patch operation: {response.status_code} {response.text}")
+        return False
+    
+    updated_op = response.json()
+    
+    # Verify updates
+    errors = []
+    
+    if updated_op.get("hour_meter_akhir") != 110.0:
+        errors.append(f"hour_meter_akhir not updated")
+    
+    if updated_op.get("jumlah_cars") != 15:
+        errors.append(f"jumlah_cars not updated")
+    
+    if updated_op.get("downtime_jam") != 2.0:
+        errors.append(f"downtime_jam not updated")
+    
+    if updated_op.get("solar_liter") != 50.0:
+        errors.append(f"solar_liter not updated")
+    
+    # Check total_jam recalculated
+    expected_total = 110.0 - 100.5  # 9.5
+    if updated_op.get("total_jam") != expected_total:
+        errors.append(f"total_jam not recalculated: expected {expected_total}, got {updated_op.get('total_jam')}")
+    
+    # Check kondisi_alat updated
+    if updated_op.get("kondisi_alat", {}).get("ban_track", {}).get("status") != "baik":
+        errors.append("kondisi_alat.ban_track not updated")
+    
+    if errors:
+        print("✗ PATCH operation validation errors:")
+        for err in errors:
+            print(f"  - {err}")
+        return False
+    
+    print(f"✓ PATCH operation successful:")
+    print(f"  - HM Akhir: 108.5 → 110.0")
+    print(f"  - Cars: 12 → 15")
+    print(f"  - Downtime: 1.5 → 2.0 jam")
+    print(f"  - Solar: 45.0 → 50.0 liter")
+    print(f"  - Total Jam recalculated: {updated_op['total_jam']} jam")
+    print(f"  - Kondisi ban_track: tidak → baik")
+    
+    # Test admin can also patch
+    admin_patch = {
+        **patch_payload,
+        "keterangan": "Admin edit: Galian selesai"
+    }
+    
+    response = admin_session.patch(f"{BASE_URL}/operations/{test_data['operation_id']}", json=admin_patch)
+    if response.status_code != 200:
+        print(f"✗ Admin failed to patch operation: {response.status_code}")
+        return False
+    
+    print(f"✓ Admin can also PATCH operations")
+    
+    return True
+
+
+def test_reports_extras():
+    """Test 4: Reports extras API (admin only)"""
+    print("\n=== TEST 4: REPORTS EXTRAS (ADMIN ONLY) ===")
+    
+    # GET extras (should return defaults)
+    response = admin_session.get(f"{BASE_URL}/reports/extras", params={
+        "unit_id": test_data["unit_id"],
+        "periode": "2026-02"
+    })
+    
+    if response.status_code != 200:
+        print(f"✗ Failed to get extras: {response.status_code} {response.text}")
+        return False
+    
+    extras = response.json()
+    print(f"✓ GET /reports/extras successful (defaults)")
+    
+    # PUT extras (admin only)
+    extras_payload = {
+        "unit_id": test_data["unit_id"],
+        "periode": "2026-02",
+        "pengembalian_jam": 500000,
+        "lain_lain": 250000,
+        "keterangan_tambahan": "Hujan 2 hari, unit standby menunggu material"
+    }
+    
+    response = admin_session.put(f"{BASE_URL}/reports/extras", json=extras_payload)
+    if response.status_code != 200:
+        print(f"✗ Failed to put extras: {response.status_code} {response.text}")
+        return False
+    
+    saved_extras = response.json()
+    print(f"✓ PUT /reports/extras successful")
+    
+    # Verify saved data
+    errors = []
+    
+    if saved_extras.get("pengembalian_jam") != 500000:
+        errors.append(f"pengembalian_jam not saved")
+    
+    if saved_extras.get("lain_lain") != 250000:
+        errors.append(f"lain_lain not saved")
+    
+    if saved_extras.get("keterangan_tambahan") != extras_payload["keterangan_tambahan"]:
+        errors.append(f"keterangan_tambahan not saved")
+    
+    if errors:
+        print("✗ Extras validation errors:")
+        for err in errors:
+            print(f"  - {err}")
+        return False
+    
+    print(f"✓ Extras saved correctly:")
+    print(f"  - Pengembalian Jam: Rp{saved_extras['pengembalian_jam']:,}")
+    print(f"  - Lain-lain: Rp{saved_extras['lain_lain']:,}")
+    print(f"  - Keterangan: {saved_extras['keterangan_tambahan'][:50]}...")
+    
+    # Test operator cannot PUT extras
+    response = operator_session.put(f"{BASE_URL}/reports/extras", json=extras_payload)
+    if response.status_code != 403:
+        print(f"✗ Operator should be blocked from PUT /reports/extras, got {response.status_code}")
+        return False
+    
+    print(f"✓ Operator blocked from PUT /reports/extras (403)")
+    
+    return True
+
+
+def test_reports_units():
+    """Test 5: Reports units API with all new fields"""
+    print("\n=== TEST 5: REPORTS UNITS WITH NEW FIELDS ===")
+    
+    # GET reports for periode
+    response = admin_session.get(f"{BASE_URL}/reports/units", params={"periode": "2026-02"})
     if response.status_code != 200:
         print(f"✗ Failed to get reports: {response.status_code} {response.text}")
         return False
@@ -324,45 +391,57 @@ def test_reports():
     
     print(f"✓ Found unit report: {unit_report['unit_label']}")
     
-    # Verify aggregations
+    # Verify all new fields are present
     errors = []
     
-    # Total cars (5 + 3 = 8)
-    expected_cars = 8
-    if unit_report.get("total_cars") != expected_cars:
-        errors.append(f"total_cars: expected {expected_cars}, got {unit_report.get('total_cars')}")
+    # Unit fields
+    expected_unit_fields = ["merek_type", "pemilik_alat", "nama_proyek", "lokasi_proyek", "pengawas_lapangan"]
+    for field in expected_unit_fields:
+        if field not in unit_report:
+            errors.append(f"Missing unit field: {field}")
     
-    # HM awal (min = 100)
-    if unit_report.get("hm_awal") != 100:
-        errors.append(f"hm_awal: expected 100, got {unit_report.get('hm_awal')}")
+    # Aggregated operation fields
+    if "total_downtime" not in unit_report:
+        errors.append("Missing total_downtime")
+    elif unit_report["total_downtime"] != 2.0:
+        errors.append(f"total_downtime: expected 2.0, got {unit_report['total_downtime']}")
     
-    # HM akhir (max = 118)
-    if unit_report.get("hm_akhir") != 118:
-        errors.append(f"hm_akhir: expected 118, got {unit_report.get('hm_akhir')}")
+    if "total_solar" not in unit_report:
+        errors.append("Missing total_solar")
+    elif unit_report["total_solar"] != 50.0:
+        errors.append(f"total_solar: expected 50.0, got {unit_report['total_solar']}")
     
-    # Total HM (10 + 8 = 18)
-    expected_total_hm = 18.0
-    if unit_report.get("total_hm") != expected_total_hm:
-        errors.append(f"total_hm: expected {expected_total_hm}, got {unit_report.get('total_hm')}")
+    if "hari_operasional" not in unit_report:
+        errors.append("Missing hari_operasional")
+    elif unit_report["hari_operasional"] != 1:
+        errors.append(f"hari_operasional: expected 1, got {unit_report['hari_operasional']}")
     
-    # Total gaji (400000)
-    expected_gaji = 400000
-    if unit_report.get("total_gaji") != expected_gaji:
-        errors.append(f"total_gaji: expected {expected_gaji}, got {unit_report.get('total_gaji')}")
+    if "kondisi_alat" not in unit_report:
+        errors.append("Missing kondisi_alat")
+    else:
+        # Check kondisi_alat structure (latest from operations)
+        ka = unit_report["kondisi_alat"]
+        if "mesin" not in ka or "ban_track" not in ka:
+            errors.append("kondisi_alat missing items")
     
-    # Total gaji bersih (300000)
-    expected_gaji_bersih = 300000
-    if unit_report.get("total_gaji_bersih") != expected_gaji_bersih:
-        errors.append(f"total_gaji_bersih: expected {expected_gaji_bersih}, got {unit_report.get('total_gaji_bersih')}")
+    if "catatan_operator" not in unit_report:
+        errors.append("Missing catatan_operator")
+    elif not isinstance(unit_report["catatan_operator"], list):
+        errors.append("catatan_operator should be a list")
     
-    # Total sparepart (1300000)
-    expected_sparepart = 1300000
-    if unit_report.get("total_sparepart") != expected_sparepart:
-        errors.append(f"total_sparepart: expected {expected_sparepart}, got {unit_report.get('total_sparepart')}")
+    # Extras fields
+    if "pengembalian_jam" not in unit_report:
+        errors.append("Missing pengembalian_jam")
+    elif unit_report["pengembalian_jam"] != 500000:
+        errors.append(f"pengembalian_jam: expected 500000, got {unit_report['pengembalian_jam']}")
     
-    # Operators list
-    if not unit_report.get("operators"):
-        errors.append("operators list is empty")
+    if "lain_lain" not in unit_report:
+        errors.append("Missing lain_lain")
+    elif unit_report["lain_lain"] != 250000:
+        errors.append(f"lain_lain: expected 250000, got {unit_report['lain_lain']}")
+    
+    if "keterangan_tambahan" not in unit_report:
+        errors.append("Missing keterangan_tambahan")
     
     if errors:
         print("✗ Report validation errors:")
@@ -370,86 +449,53 @@ def test_reports():
             print(f"  - {err}")
         return False
     
-    print(f"✓ Report aggregations correct:")
-    print(f"  - Total cars: {unit_report['total_cars']}")
-    print(f"  - HM awal: {unit_report['hm_awal']}")
-    print(f"  - HM akhir: {unit_report['hm_akhir']}")
-    print(f"  - Total HM: {unit_report['total_hm']}")
-    print(f"  - Total gaji: Rp{unit_report['total_gaji']:,}")
-    print(f"  - Total gaji bersih: Rp{unit_report['total_gaji_bersih']:,}")
-    print(f"  - Total sparepart: Rp{unit_report['total_sparepart']:,}")
-    print(f"  - Operators: {', '.join(unit_report['operators'])}")
+    print(f"✓ All new report fields present and correct:")
+    print(f"  - Merek/Type: {unit_report['merek_type']}")
+    print(f"  - Nama Proyek: {unit_report['nama_proyek']}")
+    print(f"  - Lokasi Proyek: {unit_report['lokasi_proyek']}")
+    print(f"  - Pengawas Lapangan: {unit_report['pengawas_lapangan']}")
+    print(f"  - Total Downtime: {unit_report['total_downtime']} jam")
+    print(f"  - Total Solar: {unit_report['total_solar']} liter")
+    print(f"  - Hari Operasional: {unit_report['hari_operasional']} hari")
+    print(f"  - Kondisi Alat: {len(unit_report['kondisi_alat'])} items")
+    print(f"  - Catatan Operator: {len(unit_report['catatan_operator'])} entries")
+    print(f"  - Pengembalian Jam: Rp{unit_report['pengembalian_jam']:,}")
+    print(f"  - Lain-lain: Rp{unit_report['lain_lain']:,}")
+    print(f"  - Keterangan Tambahan: {unit_report['keterangan_tambahan'][:50]}...")
     
     return True
 
 
-def test_rbac():
-    """Test 4: RBAC - operator cannot access admin endpoints"""
-    print("\n=== TEST 4: RBAC ===")
+def cleanup():
+    """Cleanup test data"""
+    print("\n=== CLEANUP TEST DATA ===")
     
-    errors = []
-    
-    # Test 1: Operator cannot POST spareparts
-    sparepart_payload = {
-        "unit_id": test_data["unit_id"],
-        "nomor_nota": "NOTA-002",
-        "tanggal": "2025-07-05",
-        "items": [{"nama_sparepart": "Test", "qty": 1, "harga_satuan": 1000}]
-    }
-    
-    response = operator_session.post(f"{BASE_URL}/spareparts", json=sparepart_payload)
-    if response.status_code != 403:
-        errors.append(f"POST /spareparts as operator: expected 403, got {response.status_code}")
-    else:
-        print(f"✓ Operator blocked from POST /spareparts (403)")
-    
-    # Test 2: Operator cannot POST payroll
-    payroll_payload = {
-        "operator_id": test_data.get("operator_user_id"),
-        "unit_id": test_data["unit_id"],
-        "periode": "2025-07",
-        "tarif_per_jam": 50000,
-        "jam_dibayar": 5,
-        "kasbon": 0
-    }
-    
-    response = operator_session.post(f"{BASE_URL}/payroll", json=payroll_payload)
-    if response.status_code != 403:
-        errors.append(f"POST /payroll as operator: expected 403, got {response.status_code}")
-    else:
-        print(f"✓ Operator blocked from POST /payroll (403)")
-    
-    # Test 3: Operator can only see their own units in reports
-    response = operator_session.get(f"{BASE_URL}/reports/units")
-    if response.status_code != 200:
-        errors.append(f"GET /reports/units as operator failed: {response.status_code}")
-    else:
-        reports = response.json()
-        # All units should belong to the operator
-        for r in reports:
-            if r.get("operator_utama") and r["operator_utama"] != "Budi Operator":
-                # Check if operator worked on this unit
-                if "Budi Operator" not in r.get("operators", []):
-                    errors.append(f"Operator sees unit they don't own: {r['unit_label']}")
+    try:
+        # Delete operation
+        if "operation_id" in test_data:
+            response = admin_session.delete(f"{BASE_URL}/operations/{test_data['operation_id']}")
+            if response.status_code == 200:
+                print(f"✓ Deleted test operation")
         
-        if not errors:
-            print(f"✓ Operator only sees their own units in reports ({len(reports)} units)")
-    
-    if errors:
-        print("✗ RBAC validation errors:")
-        for err in errors:
-            print(f"  - {err}")
-        return False
-    
-    return True
+        # Delete unit
+        if "unit_id" in test_data:
+            response = admin_session.delete(f"{BASE_URL}/units/{test_data['unit_id']}")
+            if response.status_code == 200:
+                print(f"✓ Deleted test unit")
+        
+        print(f"✓ Cleanup complete")
+        return True
+    except Exception as e:
+        print(f"⚠️  Cleanup error (non-critical): {e}")
+        return True
 
 
 def main():
     global admin_session, operator_session
     
-    print("=" * 60)
-    print("EXCAVA.OPS Backend API Test Suite")
-    print("=" * 60)
+    print("=" * 70)
+    print("TRIRARA TUNGGAL PUTRA - Hour Meter Backend API Test Suite")
+    print("=" * 70)
     
     try:
         # Login as admin
@@ -461,16 +507,20 @@ def main():
         
         # Run tests
         results = {
-            "Sparepart Multi-Item": test_sparepart_multi_item(),
-            "Payroll Per-Jam": test_payroll_per_jam(),
-            "Reports Per Unit": test_reports(),
-            "RBAC": test_rbac()
+            "Units with New Fields": test_units_new_fields(),
+            "Operations with New Fields": test_operations_new_fields(),
+            "PATCH Operations": test_operations_patch(),
+            "Reports Extras (Admin Only)": test_reports_extras(),
+            "Reports Units with All Fields": test_reports_units()
         }
         
+        # Cleanup
+        cleanup()
+        
         # Summary
-        print("\n" + "=" * 60)
+        print("\n" + "=" * 70)
         print("TEST SUMMARY")
-        print("=" * 60)
+        print("=" * 70)
         
         passed = sum(1 for v in results.values() if v)
         total = len(results)
@@ -482,7 +532,7 @@ def main():
         print(f"\nTotal: {passed}/{total} tests passed")
         
         if passed == total:
-            print("\n🎉 All tests passed!")
+            print("\n🎉 All backend tests passed!")
             return 0
         else:
             print(f"\n⚠️  {total - passed} test(s) failed")

@@ -46,13 +46,13 @@ export default function Dashboard() {
           <div className="h-72" data-testid="chart-daily-cars">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={daily}>
-                <CartesianGrid stroke="#27272A" strokeDasharray="0" vertical={false} />
-                <XAxis dataKey="tanggal" stroke="#71717A" fontSize={10} tickLine={false} />
-                <YAxis stroke="#71717A" fontSize={10} tickLine={false} />
-                <Tooltip contentStyle={{ background: "#09090B", border: "1px solid #27272A", borderRadius: 0, fontSize: 12 }} />
+                <CartesianGrid stroke="#1E3A52" strokeDasharray="0" vertical={false} />
+                <XAxis dataKey="tanggal" stroke="#8FA6B8" fontSize={10} tickLine={false} />
+                <YAxis stroke="#8FA6B8" fontSize={10} tickLine={false} />
+                <Tooltip contentStyle={{ background: "#0F2D44", border: "1px solid #2A4A63", color: "#F3F7FB", borderRadius: 0, fontSize: 12 }} />
                 <Legend wrapperStyle={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.2em" }} />
-                <Line type="monotone" dataKey="cars" stroke="#EAB308" strokeWidth={2.5} dot={{ fill: "#EAB308", r: 3 }} />
-                <Line type="monotone" dataKey="jam" stroke="#3B82F6" strokeWidth={2} dot={{ fill: "#3B82F6", r: 3 }} />
+                <Line type="monotone" dataKey="cars" stroke="#FEC202" strokeWidth={2.5} dot={{ fill: "#FEC202", r: 3 }} />
+                <Line type="monotone" dataKey="jam" stroke="#2EC5FF" strokeWidth={2} dot={{ fill: "#2EC5FF", r: 3 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -66,11 +66,11 @@ export default function Dashboard() {
           <div className="h-72" data-testid="chart-cost-per-unit">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={perUnit} layout="vertical">
-                <CartesianGrid stroke="#27272A" horizontal={false} />
-                <XAxis type="number" stroke="#71717A" fontSize={10} tickLine={false} />
-                <YAxis type="category" dataKey="unit_label" stroke="#71717A" fontSize={10} width={110} tickLine={false} />
-                <Tooltip contentStyle={{ background: "#09090B", border: "1px solid #27272A", borderRadius: 0, fontSize: 12 }} formatter={(v) => formatIDR(v)} />
-                <Bar dataKey="total_biaya_sparepart" fill="#EAB308" />
+                <CartesianGrid stroke="#1E3A52" horizontal={false} />
+                <XAxis type="number" stroke="#8FA6B8" fontSize={10} tickLine={false} />
+                <YAxis type="category" dataKey="unit_label" stroke="#8FA6B8" fontSize={10} width={110} tickLine={false} />
+                <Tooltip contentStyle={{ background: "#0F2D44", border: "1px solid #2A4A63", color: "#F3F7FB", borderRadius: 0, fontSize: 12 }} formatter={(v) => formatIDR(v)} />
+                <Bar dataKey="total_biaya_sparepart" fill="#EF3B2D" />
               </BarChart>
             </ResponsiveContainer>
           </div>

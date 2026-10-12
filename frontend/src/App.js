@@ -60,7 +60,7 @@ export default function App() {
       <BrowserRouter>
         <AuthProvider>
           <AppRouter />
-          <Toaster theme="dark" position="top-right" />
+          <Toaster theme="dark" position="top-right" toastOptions={{ style: { background: "#0F2D44", border: "1px solid #2A4A63", color: "#F3F7FB", borderRadius: 2 } }} />
         </AuthProvider>
       </BrowserRouter>
     </div>

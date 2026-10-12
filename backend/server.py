@@ -10,7 +10,7 @@ import bcrypt
 import httpx
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 
 
@@ -69,6 +69,11 @@ class Unit(BaseModel):
     operator_id: Optional[str] = None  # assigned operator user_id
     operator_name: Optional[str] = None
     pengurus: Optional[str] = ""
+    nama_proyek: Optional[str] = ""
+    lokasi_proyek: Optional[str] = ""
+    pengawas_lapangan: Optional[str] = ""
+    merek_type: Optional[str] = ""
+    pemilik_alat: Optional[str] = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -79,6 +84,11 @@ class UnitCreate(BaseModel):
     operator_id: Optional[str] = None
     operator_name: Optional[str] = None
     pengurus: Optional[str] = ""
+    nama_proyek: Optional[str] = ""
+    lokasi_proyek: Optional[str] = ""
+    pengawas_lapangan: Optional[str] = ""
+    merek_type: Optional[str] = ""
+    pemilik_alat: Optional[str] = ""
 
 
 class Operation(BaseModel):
@@ -93,6 +103,11 @@ class Operation(BaseModel):
     hour_meter_akhir: float
     jumlah_cars: int
     pengurus: Optional[str] = ""
+    keterangan: Optional[str] = ""          # keterangan harian
+    downtime_jam: Optional[float] = 0.0
+    solar_liter: Optional[float] = 0.0
+    catatan_operator: Optional[str] = ""
+    kondisi_alat: Optional[Dict[str, Any]] = {}  # {mesin: {status: baik|tidak, keterangan}}
     total_jam: float = 0.0
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -104,6 +119,11 @@ class OperationCreate(BaseModel):
     hour_meter_akhir: float
     jumlah_cars: int
     pengurus: Optional[str] = ""
+    keterangan: Optional[str] = ""          # keterangan harian
+    downtime_jam: Optional[float] = 0.0
+    solar_liter: Optional[float] = 0.0
+    catatan_operator: Optional[str] = ""
+    kondisi_alat: Optional[Dict[str, Any]] = {}  # {mesin: {status: baik|tidak, keterangan}}
 
 
 class Payroll(BaseModel):
@@ -702,6 +722,25 @@ async def create_operation(body: OperationCreate, user: User = Depends(get_curre
     return op
 
 
+@api_router.patch("/operations/{op_id}", response_model=Operation)
+async def update_operation(op_id: str, body: OperationCreate, user: User = Depends(get_current_user)):
+    query = {"id": op_id} if user.role == "admin" else {"id": op_id, "operator_id": user.user_id}
+    current = await db.operations.find_one(query, {"_id": 0})
+    if not current:
+        raise HTTPException(status_code=404, detail="Not found")
+    unit = await db.units.find_one({"id": body.unit_id}, {"_id": 0})
+    if not unit:
+        raise HTTPException(status_code=404, detail="Unit tidak ditemukan")
+    update = body.model_dump()
+    update["unit_label"] = f"{unit['unit_name']} - {unit['nomor_lambung']}"
+    update["total_jam"] = round(max(0.0, body.hour_meter_akhir - body.hour_meter_awal), 2)
+    await db.operations.update_one({"id": op_id}, {"$set": update})
+    doc = await db.operations.find_one({"id": op_id}, {"_id": 0})
+    if isinstance(doc.get("created_at"), str):
+        doc["created_at"] = datetime.fromisoformat(doc["created_at"])
+    return doc
+
+
 @api_router.delete("/operations/{op_id}")
 async def delete_operation(op_id: str, user: User = Depends(get_current_user)):
     query = {"id": op_id} if user.role == "admin" else {"id": op_id, "operator_id": user.user_id}
@@ -935,6 +974,52 @@ async def list_report_archive(user: User = Depends(get_current_user)):
     return docs
 
 
+KONDISI_KEYS = ["mesin", "sistem_hidrolik", "ban_track", "lampu", "rem", "kelistrikan"]
+
+
+class ReportExtras(BaseModel):
+    unit_id: str
+    periode: Optional[str] = ""            # YYYY-MM atau "" (semua)
+    pengembalian_jam: Optional[float] = 0.0
+    lain_lain: Optional[float] = 0.0
+    keterangan_tambahan: Optional[str] = ""
+
+
+def _extras_key(unit_id: str, periode: Optional[str]) -> str:
+    return f"{unit_id}|{periode or 'all'}"
+
+
+@api_router.get("/reports/extras")
+async def get_report_extras(unit_id: str, periode: Optional[str] = "", user: User = Depends(get_current_user)):
+    doc = await db.report_extras.find_one({"key": _extras_key(unit_id, periode)}, {"_id": 0})
+    return doc or {"unit_id": unit_id, "periode": periode or "", "pengembalian_jam": 0, "lain_lain": 0, "keterangan_tambahan": ""}
+
+
+@api_router.put("/reports/extras")
+async def put_report_extras(body: ReportExtras, admin: User = Depends(require_admin)):
+    key = _extras_key(body.unit_id, body.periode)
+    doc = body.model_dump()
+    doc["periode"] = body.periode or ""
+    doc["key"] = key
+    doc["updated_at"] = datetime.now(timezone.utc).isoformat()
+    doc["updated_by"] = admin.name
+    await db.report_extras.update_one({"key": key}, {"$set": doc}, upsert=True)
+    saved = await db.report_extras.find_one({"key": key}, {"_id": 0})
+    return saved
+
+
+def _latest_kondisi(ops_sorted: list) -> dict:
+    """Kondisi alat terbaru per item (dari laporan harian terakhir yang mengisi item tsb)."""
+    result = {k: {"status": "", "keterangan": "", "tanggal": ""} for k in KONDISI_KEYS}
+    for o in ops_sorted:  # urut naik → yang terakhir menimpa
+        ka = o.get("kondisi_alat") or {}
+        for k in KONDISI_KEYS:
+            item = ka.get(k) or {}
+            if item.get("status"):
+                result[k] = {"status": item.get("status"), "keterangan": item.get("keterangan", "") or "", "tanggal": o.get("tanggal", "")}
+    return result
+
+
 @api_router.get("/reports/units")
 async def reports_units(periode: Optional[str] = None, user: User = Depends(get_current_user)):
     """Laporan lengkap per unit: cars baru, operator, gaji operator, HM awal/akhir,
@@ -952,6 +1037,9 @@ async def reports_units(periode: Optional[str] = None, user: User = Depends(get_
         all_ops = [o for o in all_ops if (o.get("tanggal", "") or "").startswith(periode)]
         all_sp = [s for s in all_sp if (s.get("tanggal", "") or "").startswith(periode)]
         all_pays = [p for p in all_pays if (p.get("periode", "") or "") == periode]
+
+    extras_docs = await db.report_extras.find({"periode": periode or ""}, {"_id": 0}).to_list(5000)
+    extras_map = {d["key"]: d for d in extras_docs}
 
     reports = []
     for u in units:
@@ -972,9 +1060,32 @@ async def reports_units(periode: Optional[str] = None, user: User = Depends(get_
         total_gaji_bersih = round(sum(p.get("gaji_bersih", 0) for p in pays), 2)
         total_sparepart = round(sum(s.get("biaya", 0) for s in sps), 2)
 
+        total_downtime = round(sum(float(o.get("downtime_jam") or 0) for o in ops), 2)
+        total_solar = round(sum(float(o.get("solar_liter") or 0) for o in ops), 2)
+        hari_operasional = len({o.get("tanggal") for o in ops if o.get("tanggal")})
+        catatan = [
+            {"tanggal": o.get("tanggal", ""), "operator": o.get("operator_name", ""), "catatan": o.get("catatan_operator")}
+            for o in ops_sorted if (o.get("catatan_operator") or "").strip()
+        ]
+        extras = extras_map.get(_extras_key(uid, periode)) or {}
+
         reports.append({
             "unit_id": uid,
             "unit_name": u["unit_name"],
+            "merek_type": u.get("merek_type", "") or "",
+            "pemilik_alat": u.get("pemilik_alat", "") or "",
+            "nama_proyek": u.get("nama_proyek", "") or "",
+            "lokasi_proyek": u.get("lokasi_proyek", "") or "",
+            "pengawas_lapangan": u.get("pengawas_lapangan", "") or "",
+            "pengurus": u.get("pengurus", "") or "",
+            "total_downtime": total_downtime,
+            "total_solar": total_solar,
+            "hari_operasional": hari_operasional,
+            "kondisi_alat": _latest_kondisi(ops_sorted),
+            "catatan_operator": catatan,
+            "pengembalian_jam": float(extras.get("pengembalian_jam") or 0),
+            "lain_lain": float(extras.get("lain_lain") or 0),
+            "keterangan_tambahan": extras.get("keterangan_tambahan", "") or "",
             "nomor_lambung": u["nomor_lambung"],
             "serial_number": u.get("serial_number", ""),
             "unit_label": unit_label,

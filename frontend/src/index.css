@@ -4,13 +4,17 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ==========================================================
+   TRIRARA TUNGGAL PUTRA — Dark Navy + Safety Yellow + Red
+   ========================================================== */
+
 body {
     margin: 0;
     font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background: #09090B;
-    color: #FAFAFA;
+    background: #0B1E2D;
+    color: #F3F7FB;
 }
 
 .font-display {
@@ -22,30 +26,30 @@ body {
 
 @layer base {
     :root {
-        --background: 240 6% 6%;
-        --foreground: 0 0% 98%;
-        --card: 240 6% 9%;
-        --card-foreground: 0 0% 98%;
-        --popover: 240 6% 9%;
-        --popover-foreground: 0 0% 98%;
-        --primary: 47 96% 53%;
-        --primary-foreground: 0 0% 0%;
-        --secondary: 240 4% 15%;
-        --secondary-foreground: 0 0% 98%;
-        --muted: 240 4% 12%;
-        --muted-foreground: 240 5% 65%;
-        --accent: 4 100% 60%;
+        --background: 207 61% 11%;
+        --foreground: 210 40% 97%;
+        --card: 205 58% 14%;
+        --card-foreground: 210 40% 97%;
+        --popover: 205 60% 13%;
+        --popover-foreground: 210 40% 97%;
+        --primary: 46 99% 50%;
+        --primary-foreground: 205 94% 13%;
+        --secondary: 205 45% 17%;
+        --secondary-foreground: 210 40% 97%;
+        --muted: 205 48% 15%;
+        --muted-foreground: 207 18% 70%;
+        --accent: 4 85% 56%;
         --accent-foreground: 0 0% 100%;
-        --destructive: 0 84% 60%;
-        --destructive-foreground: 0 0% 98%;
-        --border: 240 4% 18%;
-        --input: 240 4% 15%;
-        --ring: 47 96% 53%;
-        --chart-1: 47 96% 53%;
-        --chart-2: 25 95% 55%;
-        --chart-3: 210 90% 60%;
-        --chart-4: 4 100% 60%;
-        --chart-5: 0 0% 60%;
+        --destructive: 4 85% 56%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 205 36% 23%;
+        --input: 205 36% 23%;
+        --ring: 46 99% 50%;
+        --chart-1: 46 99% 50%;
+        --chart-2: 4 85% 56%;
+        --chart-3: 197 100% 59%;
+        --chart-4: 156 52% 49%;
+        --chart-5: 207 18% 70%;
         --radius: 2px;
     }
 }
@@ -60,13 +64,17 @@ body {
     html {
         color-scheme: dark;
     }
+    ::selection {
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+    }
 }
 
-/* Blueprint grid background */
+/* Blueprint grid background (kuning tipis) */
 .grid-bg {
     background-image:
-        linear-gradient(rgba(234, 179, 8, 0.04) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(234, 179, 8, 0.04) 1px, transparent 1px);
+        linear-gradient(rgba(254, 194, 2, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(254, 194, 2, 0.035) 1px, transparent 1px);
     background-size: 32px 32px;
 }
 
@@ -80,24 +88,50 @@ body {
     mix-blend-mode: overlay;
 }
 
+/* Motif strip kuning-navy (dari kop surat) */
 .diagonal-stripes {
     background-image: repeating-linear-gradient(
         135deg,
-        #EAB308 0px,
-        #EAB308 8px,
-        #09090B 8px,
-        #09090B 16px
+        #FEC202 0px,
+        #FEC202 8px,
+        #0B1E2D 8px,
+        #0B1E2D 16px
     );
+}
+
+/* Motif papan catur (checkered) dari kop surat */
+.checkered {
+    background-color: #022D42;
+    background-image:
+        linear-gradient(45deg, #F3F7FB 25%, transparent 25%, transparent 75%, #F3F7FB 75%),
+        linear-gradient(45deg, #F3F7FB 25%, transparent 25%, transparent 75%, #F3F7FB 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 8px 8px;
+}
+
+/* Pita brand: navy · kuning · merah */
+.brand-rail {
+    background: linear-gradient(90deg, #FEC202 0 62%, #0B1E2D 62% 64%, #EF3B2D 64% 100%);
 }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: #09090B; }
-::-webkit-scrollbar-thumb { background: #27272A; }
-::-webkit-scrollbar-thumb:hover { background: #EAB308; }
+::-webkit-scrollbar-track { background: #0B1E2D; }
+::-webkit-scrollbar-thumb { background: #1F3D55; }
+::-webkit-scrollbar-thumb:hover { background: #FEC202; }
 
 .text-glow-yellow {
-    text-shadow: 0 0 24px rgba(234, 179, 8, 0.35);
+    text-shadow: 0 0 28px rgba(254, 194, 2, 0.30);
 }
 
 button, a { transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease; }
+
+@keyframes fade-up {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up { animation: fade-up 0.35s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+    .animate-fade-up { animation: none; }
+}

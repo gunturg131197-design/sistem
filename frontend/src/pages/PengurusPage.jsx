@@ -241,14 +241,14 @@ export default function PengurusPage() {
                 <div className="h-72 border border-border p-3">
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={chartData?.monthly || []}>
-                      <CartesianGrid stroke="#27272A" strokeDasharray="0" vertical={false} />
-                      <XAxis dataKey="month" stroke="#71717A" fontSize={10} tickLine={false} />
-                      <YAxis yAxisId="left" stroke="#EAB308" fontSize={10} tickLine={false} />
-                      <YAxis yAxisId="right" orientation="right" stroke="#3B82F6" fontSize={10} tickLine={false} />
-                      <Tooltip contentStyle={{ background: "#09090B", border: "1px solid #27272A", borderRadius: 0, fontSize: 12 }} />
+                      <CartesianGrid stroke="#1E3A52" strokeDasharray="0" vertical={false} />
+                      <XAxis dataKey="month" stroke="#8FA6B8" fontSize={10} tickLine={false} />
+                      <YAxis yAxisId="left" stroke="#FEC202" fontSize={10} tickLine={false} />
+                      <YAxis yAxisId="right" orientation="right" stroke="#2EC5FF" fontSize={10} tickLine={false} />
+                      <Tooltip contentStyle={{ background: "#0F2D44", border: "1px solid #2A4A63", color: "#F3F7FB", borderRadius: 0, fontSize: 12 }} />
                       <Legend wrapperStyle={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.2em" }} />
-                      <Bar yAxisId="left" dataKey="cars" name="Cars" fill="#EAB308" />
-                      <Line yAxisId="right" type="monotone" dataKey="jam" name="Jam" stroke="#3B82F6" strokeWidth={2.5} dot={{ fill: "#3B82F6", r: 3 }} />
+                      <Bar yAxisId="left" dataKey="cars" name="Cars" fill="#FEC202" />
+                      <Line yAxisId="right" type="monotone" dataKey="jam" name="Jam" stroke="#2EC5FF" strokeWidth={2.5} dot={{ fill: "#2EC5FF", r: 3 }} />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>

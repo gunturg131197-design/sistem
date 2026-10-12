@@ -23,14 +23,14 @@ export function exportToExcelMultiSheet(sheets, filename) {
 // ---------- PDF (kop surat TRIRARA TUNGGAL PUTRA) ----------
 const PAGE_W = 210;   // A4 portrait mm
 const PAGE_H = 297;
-const HEADER_H = PAGE_W * LH_HEADER_RATIO;   // ~53.5mm
-const FOOTER_H = PAGE_W * LH_FOOTER_RATIO;   // ~27.5mm
+const HEADER_H = PAGE_W * LH_HEADER_RATIO;   // kop dari template Hour Meter
+const FOOTER_H = PAGE_W * LH_FOOTER_RATIO;   
 const MARGIN_TOP = HEADER_H + 6;
 const MARGIN_BOTTOM = FOOTER_H + 6;
 const MARGIN_X = 14;
 
-const NAVY = [26, 42, 68];
-const YELLOW = [234, 179, 8];
+const NAVY = [2, 45, 66];
+const YELLOW = [254, 194, 2];
 
 function idr(n) {
   if (n === null || n === undefined || n === "") return "Rp 0";

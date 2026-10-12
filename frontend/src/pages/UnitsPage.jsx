@@ -14,7 +14,29 @@ import { toast } from "sonner";
 import { exportToExcel, exportToPDF } from "@/lib/exporters";
 import PengurusCombobox from "@/components/PengurusCombobox";
 
-const empty = { unit_name: "", nomor_lambung: "", serial_number: "", operator_id: "", operator_name: "", pengurus: "" };
+const empty = {
+  unit_name: "", nomor_lambung: "", serial_number: "", operator_id: "", operator_name: "", pengurus: "",
+  merek_type: "", pemilik_alat: "", nama_proyek: "", lokasi_proyek: "", pengawas_lapangan: "",
+};
+const FIELD_KEYS = Object.keys(empty);
+
+function SectionTitle({ children, hint }) {
+  return (
+    <div className="col-span-2 flex items-end justify-between border-b border-border pb-1.5 mt-2">
+      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-primary">{children}</p>
+      {hint && <p className="font-mono text-[9px] text-muted-foreground">{hint}</p>}
+    </div>
+  );
+}
+
+function Field({ label, children, full }) {
+  return (
+    <div className={full ? "col-span-2" : "col-span-2 sm:col-span-1"}>
+      <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{label}</Label>
+      {children}
+    </div>
+  );
+}
 
 export default function UnitsPage() {
   const { user } = useAuth();
@@ -65,6 +87,11 @@ export default function UnitsPage() {
     "Serial Number": u.serial_number,
     Operator: u.operator_name || "-",
     Pengurus: u.pengurus || "-",
+    "Merek / Type": u.merek_type || "-",
+    "Pemilik Alat": u.pemilik_alat || "-",
+    "Nama Proyek": u.nama_proyek || "-",
+    "Lokasi Proyek": u.lokasi_proyek || "-",
+    "Pengawas Lapangan": u.pengawas_lapangan || "-",
   }));
 
   return (
@@ -81,8 +108,8 @@ export default function UnitsPage() {
             <Button data-testid="export-pdf-units" variant="outline" className="rounded-sm border-border hover:border-primary hover:text-primary"
               onClick={() => exportToPDF({
                 title: "Daftar Unit Excavator",
-                columns: ["Unit", "Nomor Lambung", "Serial Number", "Operator", "Pengurus"],
-                rows: units.map(u => [u.unit_name, u.nomor_lambung, u.serial_number, u.operator_name || "-", u.pengurus || "-"]),
+                columns: ["Unit", "Merek / Type", "No Lambung", "Serial", "Operator", "Proyek", "Lokasi"],
+                rows: units.map(u => [u.unit_name, u.merek_type || "-", u.nomor_lambung, u.serial_number, u.operator_name || "-", u.nama_proyek || "-", u.lokasi_proyek || "-"]),
                 filename: "excavator-units",
               })}>
               <FilePdfIcon size={16} weight="bold" className="mr-2" /> PDF
@@ -94,25 +121,41 @@ export default function UnitsPage() {
                     <PlusIcon size={16} weight="bold" className="mr-1.5" /> Tambah Unit
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="rounded-sm border-border bg-card">
+                <DialogContent className="rounded-sm border-border bg-card max-w-2xl max-h-[88vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle className="font-display font-black tracking-tighter text-2xl">{editId ? "Edit Unit" : "Tambah Unit Baru"}</DialogTitle>
                   </DialogHeader>
-                  <div className="space-y-3">
-                    <div>
-                      <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Unit Excavator</Label>
-                      <Input data-testid="input-unit-name" className="rounded-sm mt-1.5" placeholder="Contoh: CAT 320D" value={form.unit_name} onChange={e => setForm({ ...form, unit_name: e.target.value })} />
-                    </div>
-                    <div>
-                      <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Nomor Lambung</Label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <SectionTitle hint="Identitas Alat · Form Hour Meter">// Identitas Alat</SectionTitle>
+                    <Field label="Nama Alat / Unit Excavator *">
+                      <Input data-testid="input-unit-name" className="rounded-sm mt-1.5" placeholder="Contoh: Excavator PC200" value={form.unit_name} onChange={e => setForm({ ...form, unit_name: e.target.value })} />
+                    </Field>
+                    <Field label="Merek / Type">
+                      <Input data-testid="input-merek-type" className="rounded-sm mt-1.5" placeholder="Komatsu / PC200-8" value={form.merek_type} onChange={e => setForm({ ...form, merek_type: e.target.value })} />
+                    </Field>
+                    <Field label="Nomor Unit / Lambung *">
                       <Input data-testid="input-lambung" className="rounded-sm mt-1.5" placeholder="EX-001" value={form.nomor_lambung} onChange={e => setForm({ ...form, nomor_lambung: e.target.value })} />
-                    </div>
-                    <div>
-                      <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Serial Number</Label>
+                    </Field>
+                    <Field label="Serial Number *">
                       <Input data-testid="input-serial" className="rounded-sm mt-1.5" placeholder="SN-XXXX" value={form.serial_number} onChange={e => setForm({ ...form, serial_number: e.target.value })} />
-                    </div>
-                    <div>
-                      <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Operator (Opsional)</Label>
+                    </Field>
+                    <Field label="Pemilik Alat" full>
+                      <Input data-testid="input-pemilik-alat" className="rounded-sm mt-1.5" placeholder="CV. Trirara Tunggal Putra / nama pemilik" value={form.pemilik_alat} onChange={e => setForm({ ...form, pemilik_alat: e.target.value })} />
+                    </Field>
+
+                    <SectionTitle hint="Data Umum · Form Hour Meter">// Data Proyek</SectionTitle>
+                    <Field label="Nama Proyek" full>
+                      <Input data-testid="input-nama-proyek" className="rounded-sm mt-1.5" placeholder="Contoh: Normalisasi Sungai" value={form.nama_proyek} onChange={e => setForm({ ...form, nama_proyek: e.target.value })} />
+                    </Field>
+                    <Field label="Lokasi Proyek">
+                      <Input data-testid="input-lokasi-proyek" className="rounded-sm mt-1.5" placeholder="Kota / Kabupaten" value={form.lokasi_proyek} onChange={e => setForm({ ...form, lokasi_proyek: e.target.value })} />
+                    </Field>
+                    <Field label="Pengawas Lapangan">
+                      <Input data-testid="input-pengawas-lapangan" className="rounded-sm mt-1.5" placeholder="Nama pengawas" value={form.pengawas_lapangan} onChange={e => setForm({ ...form, pengawas_lapangan: e.target.value })} />
+                    </Field>
+
+                    <SectionTitle>// Operator & Pengurus</SectionTitle>
+                    <Field label="Operator (Opsional)">
                       <Select value={form.operator_id || "none"} onValueChange={(v) => setForm({ ...form, operator_id: v === "none" ? "" : v })}>
                         <SelectTrigger data-testid="select-operator" className="rounded-sm mt-1.5">
                           <SelectValue placeholder="Pilih operator" />
@@ -122,18 +165,16 @@ export default function UnitsPage() {
                           {operators.map(op => <SelectItem key={op.user_id} value={op.user_id}>{op.name} ({op.role})</SelectItem>)}
                         </SelectContent>
                       </Select>
-                    </div>
-                    <div>
-                      <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Pengurus Unit</Label>
+                    </Field>
+                    <Field label="Pengurus Unit">
                       <PengurusCombobox
                         testid="input-unit-pengurus"
                         value={form.pengurus}
                         onChange={(v) => setForm({ ...form, pengurus: v })}
                         options={pengurusOptions}
-                        placeholder="Pilih atau ketik nama pengurus…"
+                        placeholder="Pilih / ketik pengurus…"
                       />
-                      <p className="mt-1.5 font-mono text-[10px] text-muted-foreground">Pilih dari yang tersimpan atau ketik nama baru.</p>
-                    </div>
+                    </Field>
                   </div>
                   <DialogFooter>
                     <Button data-testid="save-unit-button" onClick={save} className="rounded-sm bg-primary hover:bg-primary/90 text-black hover:text-black">Simpan</Button>
@@ -145,33 +186,44 @@ export default function UnitsPage() {
         }
       />
 
-      <div className="border border-border" data-testid="units-table">
+      <div className="border border-border overflow-x-auto bg-card" data-testid="units-table">
         <table className="w-full text-sm">
           <thead className="bg-muted/50">
             <tr className="text-left font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
               <th className="p-3">Unit</th>
+              <th className="p-3">Merek / Type</th>
               <th className="p-3">Nomor Lambung</th>
               <th className="p-3">Serial Number</th>
               <th className="p-3">Operator</th>
+              <th className="p-3">Proyek</th>
               <th className="p-3">Pengurus</th>
               {isAdmin && <th className="p-3 text-right">Aksi</th>}
             </tr>
           </thead>
           <tbody>
             {units.length === 0 && (
-              <tr><td colSpan={6} className="p-8 text-center text-muted-foreground text-xs font-mono">// Belum ada unit terdaftar</td></tr>
+              <tr><td colSpan={8} className="p-8 text-center text-muted-foreground text-xs font-mono">// Belum ada unit terdaftar</td></tr>
             )}
             {units.map(u => (
               <tr key={u.id} className="border-t border-border hover:bg-secondary/30">
                 <td className="p-3 font-medium">{u.unit_name}</td>
+                <td className="p-3 text-muted-foreground">{u.merek_type || "—"}</td>
                 <td className="p-3 font-mono text-primary">{u.nomor_lambung}</td>
                 <td className="p-3 font-mono text-muted-foreground">{u.serial_number}</td>
                 <td className="p-3">{u.operator_name || <span className="text-muted-foreground">—</span>}</td>
+                <td className="p-3">
+                  {u.nama_proyek ? (
+                    <div>
+                      <p className="text-sm">{u.nama_proyek}</p>
+                      <p className="font-mono text-[10px] text-muted-foreground">{[u.lokasi_proyek, u.pengawas_lapangan && `Pengawas: ${u.pengawas_lapangan}`].filter(Boolean).join(" · ")}</p>
+                    </div>
+                  ) : <span className="text-muted-foreground">—</span>}
+                </td>
                 <td className="p-3">{u.pengurus || <span className="text-muted-foreground">—</span>}</td>
                 {isAdmin && (
                   <td className="p-3 text-right">
                     <div className="inline-flex gap-1">
-                      <button data-testid={`edit-unit-${u.id}`} onClick={() => { setForm({ unit_name: u.unit_name, nomor_lambung: u.nomor_lambung, serial_number: u.serial_number, operator_id: u.operator_id || "", operator_name: u.operator_name || "", pengurus: u.pengurus || "" }); setEditId(u.id); setOpen(true); }} className="p-1.5 border border-border hover:border-primary hover:text-primary">
+                      <button data-testid={`edit-unit-${u.id}`} onClick={() => { setForm(Object.fromEntries(FIELD_KEYS.map(k => [k, u[k] || ""]))); setEditId(u.id); setOpen(true); }} className="p-1.5 border border-border hover:border-primary hover:text-primary">
                         <PencilSimpleIcon size={14} weight="bold" />
                       </button>
                       <button data-testid={`delete-unit-${u.id}`} onClick={() => del(u.id)} className="p-1.5 border border-border hover:border-accent hover:text-accent">
