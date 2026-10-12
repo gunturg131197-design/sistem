@@ -70,3 +70,8 @@ Aplikasi sistem pelaporan untuk alat berat excavator. Fields: unit excavator, no
 - Kontak WA (nomor operator/pengurus -> unit default / pengurus), tab Koneksi WhatsApp (status + webhook URL + langkah Meta).
 - Webhook /api/whatsapp/webhook siap (Meta Cloud API, verifikasi HMAC) — aktif setelah env WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN diisi & app di-deploy.
 - Rekap Pengurus: + Transfer Diterima & Piutang.
+
+## Phase 7 — Setujui Otomatis & Ringkasan Harian WA (COMPLETED, iteration_6 100%)
+- Auto-approve >= 90% confidence + cek unit, no_ref duplikat, peringatan; audit log lengkap
+- Ringkasan harian 20:00 WITA per pengurus: HM per unit, transfer hari ini, total diterima, piutang berjalan bulan ini, verifikasi tertunda
+- Pengiriman WA DISIMULASIKAN sampai kredensial Meta diisi (pasca-deploy)

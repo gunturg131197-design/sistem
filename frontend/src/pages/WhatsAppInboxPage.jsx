@@ -14,6 +14,7 @@ import {
   WarningIcon, CircleNotchIcon, PlusIcon, PencilSimpleIcon, PlugsConnectedIcon, PlugsIcon, ImageIcon, CopySimpleIcon,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
+import { AutomationTab, SummaryTab, AuditList } from "@/components/WaAutomation";
 
 const lbl = "font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground";
 const STATUS = {
@@ -131,7 +132,10 @@ function InboxTab({ units, operators, pengurusOptions, onCounts }) {
                 <div className="p-3 flex-1 min-w-0 flex flex-col gap-2">
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider"><JI size={13} weight="bold" className="text-primary" /> {jl}</span>
-                    <StatusPill status={it.status} testid={`wa-item-status-${it.id}`} />
+                    <span className="flex items-center gap-1">
+                      {it.auto_approved && <span data-testid={`wa-item-auto-${it.id}`} className="font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 bg-emerald-500/15 text-emerald-400">Otomatis</span>}
+                      <StatusPill status={it.status} testid={`wa-item-status-${it.id}`} />
+                    </span>
                   </div>
                   <Summary it={it} />
                   <div className="mt-auto space-y-1">
@@ -210,6 +214,8 @@ function ReviewDialog({ item, units, operators, pengurusOptions, onClose, onChan
   const [jenis, setJenis] = useState(item.jenis === "transfer" || item.jenis === "hour_meter" ? item.jenis : "transfer");
   const [d, setD] = useState({ ...(item.draft || {}) });
   const [busy, setBusy] = useState("");
+  const [hist, setHist] = useState([]);
+  useEffect(() => { api.get("/wa/audit", { params: { inbox_id: item.id } }).then(({ data }) => setHist(data)).catch(() => {}); }, [item.id]);
   const done = item.status === "approved";
   const locked = done || item.status === "processing";
   const set = (k, v) => setD((x) => ({ ...x, [k]: v }));
@@ -255,6 +261,12 @@ function ReviewDialog({ item, units, operators, pengurusOptions, onClose, onChan
               </div>
             )}
             {item.status === "error" && <p className="text-sm text-accent border border-accent/50 p-3">{item.error}</p>}
+            {item.auto_check && !done && item.auto_check.reasons?.length > 0 && (
+              <div className="border border-border p-3 text-xs space-y-1" data-testid="wa-review-autocheck">
+                <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">Tidak disimpan otomatis karena · keyakinan AI {Math.round((item.auto_check.confidence || 0) * 100)}%</p>
+                {item.auto_check.reasons.map((r, i) => <p key={i} className="text-muted-foreground">• {r}</p>)}
+              </div>
+            )}
             {done && <p className="text-sm border border-emerald-500/50 text-emerald-400 p-3" data-testid="wa-review-result">Tercatat: <b>{item.result?.no}</b> {item.result?.type === "kas_masuk" ? "(Kas Masuk)" : "(Ops Report)"} · oleh {item.reviewed_by}</p>}
 
             <div className="flex border border-border w-fit">
@@ -307,6 +319,10 @@ function ReviewDialog({ item, units, operators, pengurusOptions, onClose, onChan
             </div>
           </div>
         </div>
+        <details className="border border-border" data-testid="wa-review-history">
+          <summary className="cursor-pointer px-3 py-2 font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground hover:text-foreground">Riwayat aktivitas ({hist.length})</summary>
+          <div className="px-3 max-h-52 overflow-y-auto"><AuditList rows={hist} compact testid="wa-review-audit" /></div>
+        </details>
         <DialogFooter className="flex-wrap gap-2 sm:justify-between">
           <div className="flex gap-2">
             <Button data-testid="wa-delete" variant="outline" disabled={!!busy} onClick={() => act("delete")} className="rounded-sm border-border hover:border-accent hover:text-accent"><TrashIcon size={14} weight="bold" className="mr-1.5" /> Hapus</Button>
@@ -476,10 +492,14 @@ export default function WhatsAppInboxPage() {
         <TabsList className="h-auto rounded-sm bg-card border border-border p-1 mb-6 gap-1">
           <TabsTrigger value="inbox" data-testid="wa-tab-inbox" className="rounded-sm text-xs px-3 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Kotak Masuk{pending ? ` · ${pending}` : ""}</TabsTrigger>
           <TabsTrigger value="contacts" data-testid="wa-tab-contacts" className="rounded-sm text-xs px-3 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Kontak WA</TabsTrigger>
+          <TabsTrigger value="automation" data-testid="wa-tab-automation" className="rounded-sm text-xs px-3 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Otomatisasi & Audit</TabsTrigger>
+          <TabsTrigger value="summary" data-testid="wa-tab-summary" className="rounded-sm text-xs px-3 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Ringkasan Harian</TabsTrigger>
           <TabsTrigger value="settings" data-testid="wa-tab-settings" className="rounded-sm text-xs px-3 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Koneksi WhatsApp</TabsTrigger>
         </TabsList>
         <TabsContent value="inbox"><InboxTab units={units} operators={operators} pengurusOptions={pengurusOptions} onCounts={setStatus} /></TabsContent>
         <TabsContent value="contacts">{tab === "contacts" && <ContactsTab units={units} operators={operators} pengurusOptions={pengurusOptions} />}</TabsContent>
+        <TabsContent value="automation">{tab === "automation" && <AutomationTab />}</TabsContent>
+        <TabsContent value="summary">{tab === "summary" && <SummaryTab />}</TabsContent>
         <TabsContent value="settings"><SettingsTab status={status} /></TabsContent>
       </Tabs>
     </div>

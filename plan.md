@@ -141,3 +141,11 @@ User choices: WhatsApp Business Cloud API resmi (kredensial menyusul), data dive
 - [x] Rekap Pengurus: metrik Transfer Diterima & Piutang (+ export)
 - [x] Testing iteration_5: backend 16/16, frontend OK
 - Pending dari user: WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN + deploy
+
+## Phase 7 — Setujui Otomatis + Ringkasan Harian WA (Status: COMPLETED)
+- [x] Auto-approve (confidence >= 90%, unit dikenali, nilai jelas, no_ref tidak duplikat, tanpa peringatan) — sisanya ke verifikasi manual
+- [x] Audit log semua aksi (received, ai_processed, auto_approved, auto_blocked, approved, rejected, settings_changed, summary_run)
+- [x] Ringkasan Harian WA per pengurus 20:00 WITA (/.emergent/crons.yml -> POST /api/cron/daily-summary, Bearer WEBHOOK_CRON_SECRET, idempoten)
+- [x] UI tab Otomasi & Ringkasan di Kotak Masuk WA
+- [x] Testing iteration_6: backend 100%, frontend 100%
+- Pending: kredensial Meta WhatsApp setelah deploy (pengiriman saat ini disimulasikan/dilewati)

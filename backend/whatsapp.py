@@ -97,6 +97,16 @@ def build_whatsapp_router(db, require_admin: Callable, hooks: dict) -> APIRouter
     """hooks: {'next_bukti': async fn(db, prefix) -> str}"""
     r = APIRouter()
 
+    AUTO_DEFAULT = {"transfer_enabled": False, "hm_enabled": False, "min_confidence": 0.9}
+
+    async def get_auto_settings() -> dict:
+        doc = await db.app_settings.find_one({"key": "wa_auto"}, {"_id": 0}) or {}
+        return {**AUTO_DEFAULT, **{k: v for k, v in doc.items() if k in AUTO_DEFAULT}}
+
+    async def audit(action: str, actor: str, inbox_id: str = "", detail: str = "", data: Optional[dict] = None):
+        await db.wa_audit.insert_one({"id": str(uuid.uuid4()), "at": _now(), "action": action, "actor": actor,
+                                      "inbox_id": inbox_id, "detail": detail[:500], "data": data or {}})
+
     async def _units():
         return await db.units.find({}, {"_id": 0}).to_list(2000)
 
@@ -123,6 +133,7 @@ def build_whatsapp_router(db, require_admin: Callable, hooks: dict) -> APIRouter
             ai = await extract_image(bytes(media["data"]), item.get("caption", ""))
         except Exception as e:  # noqa: BLE001
             await db.wa_inbox.update_one({"id": item_id}, {"$set": {"status": "error", "error": f"AI gagal membaca gambar: {str(e)[:200]}"}})
+            await audit("ai_error", f"AI ({AI_MODEL})", item_id, str(e)[:200])
             return
 
         units = await _units()
@@ -193,11 +204,50 @@ def build_whatsapp_router(db, require_admin: Callable, hooks: dict) -> APIRouter
         if not unit and jenis in ("transfer", "hour_meter"):
             warnings.append(f"Unit untuk keterangan \"{item.get('caption') or '-'}\" belum dikenali — pilih unit")
 
+        # ---- evaluasi persetujuan otomatis ----
+        cfg = await get_auto_settings()
+        try:
+            conf = float(ai.get("keyakinan") or 0)
+        except (TypeError, ValueError):
+            conf = 0.0
+        reasons = []
+        if jenis not in ("transfer", "hour_meter"):
+            reasons.append("Jenis gambar tidak dikenali")
+        elif not cfg["transfer_enabled" if jenis == "transfer" else "hm_enabled"]:
+            reasons.append("Persetujuan otomatis untuk jenis ini nonaktif")
+        if conf < float(cfg["min_confidence"]):
+            reasons.append(f"Keyakinan AI {conf:.0%} di bawah batas {float(cfg['min_confidence']):.0%}")
+        if not unit:
+            reasons.append("Unit tidak dikenali")
+        if jenis == "transfer":
+            if not draft.get("debit"):
+                reasons.append("Nominal tidak terbaca")
+            if not draft.get("no_ref"):
+                reasons.append("No. Ref tidak terbaca — duplikasi tidak bisa dipastikan")
+        if jenis == "hour_meter" and not draft.get("hm_akhir"):
+            reasons.append("Angka HM tidak terbaca")
+        if status == "duplicate":
+            reasons.append("Terindikasi duplikat")
+        reasons.extend(f"Peringatan: {w}" for w in warnings)
+        auto_check = {"eligible": not reasons, "confidence": conf, "threshold": float(cfg["min_confidence"]), "reasons": reasons, "at": _now()}
+
         await db.wa_inbox.update_one({"id": item_id}, {"$set": {
             "status": status, "jenis": jenis, "ai": ai, "draft": draft, "warnings": warnings,
             "match": {"unit_label": _label(unit), "via": how, "contact": (contact or {}).get("nama", "")},
-            "processed_at": _now(), "error": "",
+            "processed_at": _now(), "error": "", "auto_check": auto_check,
         }})
+        await audit("ai_processed", f"AI ({AI_MODEL})", item_id, f"{jenis} · keyakinan {conf:.0%} · unit {_label(unit) or '-'}",
+                    {"warnings": warnings, "status": status})
+        if not reasons:
+            fresh = await db.wa_inbox.find_one({"id": item_id}, {"_id": 0})
+            try:
+                res = await do_approve(fresh, jenis, {}, actor="Sistem (otomatis)", auto=True)
+                await audit("auto_approved", "Sistem (otomatis)", item_id, f"Tersimpan otomatis: {res['result'].get('no')}", res["result"])
+            except HTTPException as e:
+                await db.wa_inbox.update_one({"id": item_id}, {"$set": {"auto_check.eligible": False, "auto_check.reasons": [f"Validasi akhir gagal: {e.detail}"]}})
+                await audit("auto_blocked", "Sistem (otomatis)", item_id, f"Validasi akhir gagal: {e.detail}")
+        elif jenis in ("transfer", "hour_meter"):
+            await audit("auto_blocked", "Sistem (otomatis)", item_id, "; ".join(reasons))
 
     async def create_item(data: bytes, mime: str, caption: str, source: str, from_phone: str = "", from_name: str = "",
                           message_id: str = "", created_by: str = "") -> dict:
@@ -243,6 +293,7 @@ def build_whatsapp_router(db, require_admin: Callable, hooks: dict) -> APIRouter
         if len(data) > MAX_BYTES:
             raise HTTPException(400, "Ukuran gambar maksimal 12 MB")
         doc = await create_item(data, file.content_type or "", caption, "upload", from_phone=phone, created_by=admin.name)
+        await audit("received", admin.name, doc["id"], f"Upload manual · ket {caption or '-'}")
         background.add_task(process_item, doc["id"])
         return doc
 
@@ -265,6 +316,7 @@ def build_whatsapp_router(db, require_admin: Callable, hooks: dict) -> APIRouter
         if body.jenis:
             upd["jenis"] = body.jenis
         await db.wa_inbox.update_one({"id": iid}, {"$set": upd})
+        await audit("edited", admin.name, iid, "Draft diubah", {"draft": body.draft or {}})
         return await db.wa_inbox.find_one({"id": iid}, {"_id": 0})
 
     @r.post("/api/wa/inbox/{iid}/reprocess")
@@ -272,6 +324,7 @@ def build_whatsapp_router(db, require_admin: Callable, hooks: dict) -> APIRouter
         res = await db.wa_inbox.update_one({"id": iid, "status": {"$ne": "approved"}}, {"$set": {"status": "processing", "error": ""}})
         if res.matched_count == 0:
             raise HTTPException(400, "Tidak bisa diproses ulang")
+        await audit("reprocessed", admin.name, iid, "Dibaca ulang oleh AI")
         background.add_task(process_item, iid)
         return {"ok": True}
 
@@ -281,6 +334,7 @@ def build_whatsapp_router(db, require_admin: Callable, hooks: dict) -> APIRouter
                                            {"$set": {"status": "rejected", "reviewed_by": admin.name, "reviewed_at": _now()}})
         if res.matched_count == 0:
             raise HTTPException(400, "Tidak bisa ditolak")
+        await audit("rejected", admin.name, iid, "Ditolak admin")
         return {"ok": True}
 
     @r.delete("/api/wa/inbox/{iid}")
@@ -290,6 +344,7 @@ def build_whatsapp_router(db, require_admin: Callable, hooks: dict) -> APIRouter
             raise HTTPException(404, "Not found")
         await db.wa_media.delete_one({"id": item.get("media_id")})
         await db.wa_inbox.delete_one({"id": iid})
+        await audit("deleted", admin.name, iid, f"Pesan dihapus (status {item.get('status')}, ket {item.get('caption') or '-'})")
         return {"ok": True}
 
     @r.post("/api/wa/inbox/{iid}/approve")
@@ -297,12 +352,20 @@ def build_whatsapp_router(db, require_admin: Callable, hooks: dict) -> APIRouter
         item = await db.wa_inbox.find_one({"id": iid}, {"_id": 0})
         if not item:
             raise HTTPException(404, "Not found")
-        if item["status"] == "approved":
-            raise HTTPException(400, "Sudah disetujui")
         if item["status"] == "processing":
             raise HTTPException(400, "Masih diproses AI")
-        jenis = body.jenis or item.get("jenis")
-        d = {**(item.get("draft") or {}), **(body.draft or {})}
+        before = item.get("draft") or {}
+        changed = {k: v for k, v in (body.draft or {}).items() if before.get(k) != v}
+        res = await do_approve(item, body.jenis or item.get("jenis"), body.draft or {}, actor=admin.name, admin=admin)
+        await audit("approved", admin.name, iid, f"Disetujui manual: {res['result'].get('no')}", {"koreksi": changed, **res["result"]})
+        return res
+
+    async def do_approve(item: dict, jenis: str, override: dict, actor: str, admin=None, auto: bool = False):
+        iid = item["id"]
+        if item["status"] == "approved":
+            raise HTTPException(400, "Sudah disetujui")
+        d = {**(item.get("draft") or {}), **(override or {})}
+        actor_id = getattr(admin, "user_id", "") if admin else ""
         unit = await db.units.find_one({"id": d.get("unit_id")}, {"_id": 0}) if d.get("unit_id") else None
         result: dict[str, Any] = {}
 
@@ -323,7 +386,7 @@ def build_whatsapp_router(db, require_admin: Callable, hooks: dict) -> APIRouter
                 "pengurus": d.get("pengurus") or (unit or {}).get("pengurus", ""), "unit_id": (unit or {}).get("id", ""),
                 "unit_label": _label(unit), "no_ref": str(d.get("no_ref") or ""), "no_bukti": no,
                 "source": "whatsapp" if item.get("source") == "whatsapp" else "upload", "inbox_id": iid,
-                "created_at": _now(), "created_by": admin.name,
+                "created_at": _now(), "created_by": actor, "auto_approved": auto,
             }
             await db.kas_masuk.insert_one(km)
             result = {"type": "kas_masuk", "id": km["id"], "no": no}
@@ -354,24 +417,56 @@ def build_whatsapp_router(db, require_admin: Callable, hooks: dict) -> APIRouter
                 op_id = str(uuid.uuid4())
                 await db.operations.insert_one({
                     "id": op_id, "unit_id": unit["id"], "unit_label": _label(unit),
-                    "operator_id": (op_user or {}).get("user_id") or unit.get("operator_id") or admin.user_id,
-                    "operator_name": (op_user or {}).get("name") or unit.get("operator_name") or admin.name,
+                    "operator_id": (op_user or {}).get("user_id") or unit.get("operator_id") or actor_id or "wa-system",
+                    "operator_name": (op_user or {}).get("name") or unit.get("operator_name") or actor,
                     "tanggal": d["tanggal"][:10], "hour_meter_awal": hm_awal, "hour_meter_akhir": hm_akhir,
                     "jumlah_cars": int(d.get("jumlah_cars") or 0), "pengurus": d.get("pengurus") or unit.get("pengurus", ""),
                     "keterangan": "Laporan HM via WhatsApp", "downtime_jam": 0.0, "solar_liter": 0.0, "catatan_operator": "",
                     "kondisi_alat": {}, "total_jam": total, "source": "whatsapp", "inbox_id": iid, "created_at": _now(),
+                    "auto_approved": auto,
                 })
             result = {"type": "operation", "id": op_id, "no": f"{_label(unit)} · {d['tanggal'][:10]}", "updated": bool(existing)}
             reply = f"Laporan HM tercatat\nUnit: {_label(unit)}\nTanggal: {d['tanggal'][:10]}\nHM: {hm_awal} -> {hm_akhir} ({total} jam)"
         else:
             raise HTTPException(400, "Jenis harus bukti transfer atau hour meter")
 
-        await db.wa_inbox.update_one({"id": iid}, {"$set": {"status": "approved", "jenis": jenis, "draft": d, "result": result,
-                                                             "reviewed_by": admin.name, "reviewed_at": _now()}})
+        await db.wa_inbox.update_one({"id": iid, "status": {"$ne": "approved"}}, {"$set": {
+            "status": "approved", "jenis": jenis, "draft": d, "result": result, "reviewed_by": actor, "reviewed_at": _now(), "auto_approved": auto}})
         replied = False
         if item.get("source") == "whatsapp" and item.get("from_phone"):
-            replied = await wa_send_text(item["from_phone"], reply)
+            replied = await wa_send_text(item["from_phone"], reply + ("\n(Tercatat otomatis)" if auto else ""))
+            await audit("reply_sent" if replied else "reply_failed", "Sistem", iid, "Balasan konfirmasi WA" + ("" if replied else " gagal terkirim"))
         return {"ok": True, "result": result, "replied": replied}
+
+    # ---------- Pengaturan otomatis + audit ----------
+    class AutoIn(BaseModel):
+        transfer_enabled: bool = False
+        hm_enabled: bool = False
+        min_confidence: float = 0.9
+
+    @r.get("/api/wa/auto-settings")
+    async def get_auto(admin=Depends(require_admin)):
+        cfg = await get_auto_settings()
+        return {**cfg, "auto_count": await db.wa_inbox.count_documents({"auto_approved": True}),
+                "manual_queue": await db.wa_inbox.count_documents({"status": {"$in": ["pending", "duplicate", "error"]}})}
+
+    @r.put("/api/wa/auto-settings")
+    async def put_auto(body: AutoIn, admin=Depends(require_admin)):
+        if not 0.9 <= body.min_confidence <= 1.0:
+            raise HTTPException(400, "Batas keyakinan minimal 90% (0.90 – 1.00)")
+        before = await get_auto_settings()
+        await db.app_settings.update_one({"key": "wa_auto"}, {"$set": {"key": "wa_auto", **body.model_dump(), "updated_by": admin.name, "updated_at": _now()}}, upsert=True)
+        await audit("settings_changed", admin.name, "", "Pengaturan persetujuan otomatis diubah", {"sebelum": before, "sesudah": body.model_dump()})
+        return await get_auto_settings()
+
+    @r.get("/api/wa/audit")
+    async def list_audit(inbox_id: Optional[str] = None, action: Optional[str] = None, limit: int = 300, admin=Depends(require_admin)):
+        q: dict[str, Any] = {}
+        if inbox_id:
+            q["inbox_id"] = inbox_id
+        if action and action != "all":
+            q["action"] = {"$in": action.split(",")}
+        return await db.wa_audit.find(q, {"_id": 0}).sort("at", -1).to_list(min(max(limit, 1), 1000))
 
     # ---------- Kontak WA ----------
     @r.get("/api/wa/contacts")
@@ -422,6 +517,8 @@ def build_whatsapp_router(db, require_admin: Callable, hooks: dict) -> APIRouter
                 names = {c.get("wa_id"): (c.get("profile") or {}).get("name", "") for c in value.get("contacts", [])}
                 for m in value.get("messages", []):
                     mid, sender = m.get("id"), m.get("from")
+                    if sender:
+                        await db.wa_last_inbound.update_one({"phone": norm_phone(sender)}, {"$set": {"phone": norm_phone(sender), "at": _now()}}, upsert=True)
                     if not mid or not sender or await db.wa_inbox.find_one({"message_id": mid}):
                         continue
                     if m.get("type") == "image":
@@ -429,6 +526,7 @@ def build_whatsapp_router(db, require_admin: Callable, hooks: dict) -> APIRouter
                         try:
                             data, mime = await wa_download_media(img["id"])
                             doc = await create_item(data, mime, img.get("caption", ""), "whatsapp", sender, names.get(sender, ""), mid)
+                            await audit("received", f"WA {names.get(sender, '') or sender}", doc["id"], f"Pesan WhatsApp · ket {img.get('caption') or '-'}")
                             await wa_send_text(sender, "Gambar diterima, sedang diproses dan menunggu verifikasi admin.")
                             await process_item(doc["id"])
                         except Exception as e:  # noqa: BLE001

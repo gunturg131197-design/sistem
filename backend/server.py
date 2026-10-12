@@ -14,6 +14,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 from finance import build_finance_router, sync_kas_sparepart, sync_kas_payroll, unsync_kas, next_bukti
 from whatsapp import build_whatsapp_router
+from daily_summary import build_summary_router
 
 
 ROOT_DIR = Path(__file__).parent
@@ -1262,6 +1263,7 @@ async def reports_units(periode: Optional[str] = None, user: User = Depends(get_
 app.include_router(api_router)
 app.include_router(build_finance_router(db, require_admin))
 app.include_router(build_whatsapp_router(db, require_admin, {"next_bukti": next_bukti}))
+app.include_router(build_summary_router(db, require_admin))
 
 app.add_middleware(
     CORSMiddleware,
