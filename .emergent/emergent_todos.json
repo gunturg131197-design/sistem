@@ -1,0 +1,26 @@
+[
+  {
+    "content": "wa_outbox.py: central sender (dedupe, retry, redaction, status tracking)",
+    "status": "in_progress"
+  },
+  {
+    "content": "Reroute whatsapp.py + daily_summary.py sends via outbox; webhook statuses + connection state",
+    "status": "pending"
+  },
+  {
+    "content": "Endpoints: cloud phone-number test, send-test, register, subscribe, outbox list/retry, cron outbox-retry",
+    "status": "pending"
+  },
+  {
+    "content": "Frontend: connection panel (status levels), test buttons, outbox monitor, panduan",
+    "status": "pending"
+  },
+  {
+    "content": "Public /kebijakan-privasi page + PANDUAN_WHATSAPP.md",
+    "status": "pending"
+  },
+  {
+    "content": "Testing agent Phase A",
+    "status": "pending"
+  }
+]

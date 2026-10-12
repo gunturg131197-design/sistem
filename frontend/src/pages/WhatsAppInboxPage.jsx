@@ -11,10 +11,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   WhatsappLogoIcon, UploadSimpleIcon, ReceiptIcon, GaugeIcon, QuestionIcon, CheckIcon, XIcon, ArrowClockwiseIcon, TrashIcon,
-  WarningIcon, CircleNotchIcon, PlusIcon, PencilSimpleIcon, PlugsConnectedIcon, PlugsIcon, ImageIcon, CopySimpleIcon,
+  WarningIcon, CircleNotchIcon, PlusIcon, PencilSimpleIcon, ImageIcon,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { AutomationTab, SummaryTab, AuditList } from "@/components/WaAutomation";
+import { ConnectionTab, OutboxTab, LEVEL } from "@/components/WaConnection";
 
 const lbl = "font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground";
 const STATUS = {
@@ -413,59 +414,6 @@ function ContactsTab({ units, operators, pengurusOptions }) {
   );
 }
 
-function SettingsTab({ status }) {
-  const webhook = `${process.env.REACT_APP_BACKEND_URL}/api/whatsapp/webhook`;
-  const copy = (t) => { navigator.clipboard?.writeText(t); toast.success("Disalin"); };
-  const steps = [
-    "Buat aplikasi di developers.facebook.com → tambahkan produk WhatsApp (akun Meta Business).",
-    "Daftarkan nomor HP baru khusus perusahaan di WhatsApp → API Setup. Catat Phone Number ID.",
-    "Buat token permanen: Business Settings → System Users → token dengan izin whatsapp_business_messaging.",
-    "Salin App Secret dari App Settings → Basic. Buat Verify Token bebas (kata sandi acak).",
-    "Deploy aplikasi ini, lalu isi Callback URL di WhatsApp → Configuration dengan URL webhook di bawah + Verify Token, subscribe field \"messages\".",
-    "Kirim keempat kredensial ke developer agar dipasang di server. Status di atas akan berubah menjadi Terhubung.",
-  ];
-  return (
-    <div className="grid grid-cols-1 xl:grid-cols-3 gap-4" data-testid="wa-settings-tab">
-      <div className="border border-border bg-card p-5 space-y-4">
-        <p className={lbl}>// Status Koneksi</p>
-        <div className="flex items-center gap-3" data-testid="wa-connection-status">
-          {status?.configured ? <PlugsConnectedIcon size={28} weight="bold" className="text-emerald-400" /> : <PlugsIcon size={28} weight="bold" className="text-primary" />}
-          <div>
-            <p className="font-display font-black text-xl tracking-tighter">{status?.configured ? "Terhubung" : "Belum Terhubung"}</p>
-            <p className="font-mono text-[10px] text-muted-foreground">WhatsApp Business Cloud API (Meta)</p>
-          </div>
-        </div>
-        {!status?.configured && (
-          <div className="text-xs space-y-1">
-            <p className="text-muted-foreground">Kredensial yang belum diisi:</p>
-            {(status?.missing || []).map((m) => <p key={m} className="font-mono text-primary">{m}</p>)}
-          </div>
-        )}
-        <div className="pt-3 border-t border-border text-xs text-muted-foreground">AI pembaca gambar: <b className="text-foreground font-mono">{status?.ai_model || "-"}</b> (Emergent LLM Key)</div>
-      </div>
-      <div className="xl:col-span-2 border border-border bg-card p-5 space-y-4">
-        <p className={lbl}>// Webhook URL (isi di Meta)</p>
-        <div className="flex gap-2">
-          <Input readOnly data-testid="wa-webhook-url" value={webhook} className="rounded-sm font-mono text-xs" />
-          <Button data-testid="wa-webhook-copy" variant="outline" onClick={() => copy(webhook)} className="rounded-sm border-border hover:border-primary hover:text-primary"><CopySimpleIcon size={14} weight="bold" className="mr-1.5" /> Salin</Button>
-        </div>
-        <p className="font-mono text-[10px] text-accent">Gunakan URL dari aplikasi yang sudah di-deploy (bukan preview) agar webhook selalu aktif.</p>
-        <p className={lbl}>// Langkah Menghubungkan</p>
-        <ol className="space-y-2">
-          {steps.map((s, i) => <li key={i} className="flex gap-3 text-sm"><span className="font-mono text-primary shrink-0">{String(i + 1).padStart(2, "0")}</span><span className="text-muted-foreground">{s}</span></li>)}
-        </ol>
-        <div className="pt-3 border-t border-border">
-          <p className={lbl}>// Format pesan untuk operator & pengurus</p>
-          <div className="grid sm:grid-cols-2 gap-3 mt-2 text-sm">
-            <div className="border border-border p-3"><ReceiptIcon size={16} weight="bold" className="text-primary mb-1" /><b>Bukti transfer</b><p className="text-muted-foreground text-xs mt-1">Kirim foto/screenshot bukti transfer dengan caption kode unit, contoh: <span className="font-mono text-foreground">Sdlg 10</span></p></div>
-            <div className="border border-border p-3"><GaugeIcon size={16} weight="bold" className="text-primary mb-1" /><b>Laporan HM</b><p className="text-muted-foreground text-xs mt-1">Kirim foto layar monitor (angka HM terlihat jelas) dengan caption kode unit, contoh: <span className="font-mono text-foreground">Sdlg 230</span></p></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function WhatsAppInboxPage() {
   const [tab, setTab] = useState("inbox");
   const [units, setUnits] = useState([]);
@@ -477,6 +425,7 @@ export default function WhatsAppInboxPage() {
       .then(([u, us, pg, st]) => { setUnits(u.data); setOperators(us.data); setPengurusOptions(pg.data); setStatus(st.data); })
       .catch(() => toast.error("Gagal memuat data pendukung"));
   }, []);
+  const conn = status?.connection;
   const pending = useMemo(() => (status?.counts?.pending || 0) + (status?.counts?.duplicate || 0), [status]);
 
   return (
@@ -484,9 +433,9 @@ export default function WhatsAppInboxPage() {
       <PageHeader overline="// WhatsApp / 08" title="Kotak Masuk WA"
         description="Bukti transfer & foto layar Hour Meter dari WhatsApp dibaca otomatis oleh AI, dicocokkan ke unit lewat keterangan (mis. Sdlg 10), lalu diverifikasi admin sebelum tercatat ke Kas Masuk dan Ops Report."
         actions={
-          <span data-testid="wa-header-status" className={`inline-flex items-center gap-2 px-3 py-2 border font-mono text-[10px] uppercase tracking-widest ${status?.configured ? "border-emerald-500/60 text-emerald-400" : "border-primary/60 text-primary"}`}>
-            <WhatsappLogoIcon size={14} weight="bold" /> {status?.configured ? "WhatsApp Terhubung" : "WhatsApp Belum Terhubung · mode upload"}
-          </span>
+          <button type="button" onClick={() => setTab("settings")} data-testid="wa-header-status" className={`inline-flex items-center gap-2 px-3 py-2 border font-mono text-[10px] uppercase tracking-widest transition-opacity duration-150 hover:opacity-80 ${(LEVEL[conn?.level] || LEVEL.not_configured).tone}`}>
+            <WhatsappLogoIcon size={14} weight="bold" /> {(LEVEL[conn?.level] || LEVEL.not_configured).short}
+          </button>
         } />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="h-auto rounded-sm bg-card border border-border p-1 mb-6 gap-1">
@@ -494,13 +443,15 @@ export default function WhatsAppInboxPage() {
           <TabsTrigger value="contacts" data-testid="wa-tab-contacts" className="rounded-sm text-xs px-3 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Kontak WA</TabsTrigger>
           <TabsTrigger value="automation" data-testid="wa-tab-automation" className="rounded-sm text-xs px-3 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Otomatisasi & Audit</TabsTrigger>
           <TabsTrigger value="summary" data-testid="wa-tab-summary" className="rounded-sm text-xs px-3 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Ringkasan Harian</TabsTrigger>
+          <TabsTrigger value="outbox" data-testid="wa-tab-outbox" className="rounded-sm text-xs px-3 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Pesan Keluar</TabsTrigger>
           <TabsTrigger value="settings" data-testid="wa-tab-settings" className="rounded-sm text-xs px-3 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Koneksi WhatsApp</TabsTrigger>
         </TabsList>
         <TabsContent value="inbox"><InboxTab units={units} operators={operators} pengurusOptions={pengurusOptions} onCounts={setStatus} /></TabsContent>
         <TabsContent value="contacts">{tab === "contacts" && <ContactsTab units={units} operators={operators} pengurusOptions={pengurusOptions} />}</TabsContent>
         <TabsContent value="automation">{tab === "automation" && <AutomationTab />}</TabsContent>
         <TabsContent value="summary">{tab === "summary" && <SummaryTab />}</TabsContent>
-        <TabsContent value="settings"><SettingsTab status={status} /></TabsContent>
+        <TabsContent value="outbox">{tab === "outbox" && <OutboxTab />}</TabsContent>
+        <TabsContent value="settings">{tab === "settings" && <ConnectionTab onChanged={(c) => setStatus((s) => ({ ...(s || {}), connection: c }))} />}</TabsContent>
       </Tabs>
     </div>
   );

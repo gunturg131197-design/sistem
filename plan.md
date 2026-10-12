@@ -6,6 +6,15 @@
 - Tambahkan field yang dibutuhkan format **Hour Meter.docx** ke sistem (Unit & Ops Report) agar laporan terisi otomatis.
 - Buat eksport laporan **Hour Meter** dengan **layout sama** untuk **PDF + Excel + Word**.
 - Pastikan fitur existing (Dashboard, Units, Ops, Payroll, Sparepart, Laporan/nomor LP/TTP + arsip, Pengurus, Users) tetap berjalan.
+- Integrasi WhatsApp end-to-end (produksi) via **Meta WhatsApp Cloud API**:
+  - Pesan masuk (gambar bukti transfer & foto HM) benar-benar masuk ke **Kotak Masuk WA**.
+  - Balasan konfirmasi & Ringkasan Harian benar-benar terkirim.
+  - **Tidak pernah** menampilkan token/App Secret di log atau UI; hanya via env/secrets.
+  - **Auto-approve** tetap: AI confidence **≥ 90%**, unit dikenali, angka jelas, **no_ref tidak duplikat**, tanpa warning; selain itu **manual**.
+  - **Audit log** lengkap untuk setiap aksi dan setiap pengiriman WA.
+- Semua otomasi berjalan di zona waktu **Asia/Makassar (WITA)**.
+- Deployment harus aman dan **tidak menghapus / mereset database**.
+- Tidak menyatakan WhatsApp “Terhubung” sebelum **uji kirim + terima** berhasil dengan nomor WhatsApp sungguhan.
 
 ## 2) Implementation Steps
 
@@ -102,19 +111,193 @@
 - Phase 2 (rebrand, tema navy, field baru Unit & Ops, PATCH ops, extras laporan, export Hour Meter per unit & semua unit) — DONE, testing_agent iteration_2: 100% pass
 - Phase 3 hardening: smart padding baris kosong PDF, nomor halaman — DONE
 
-## 3) Next Actions (lama)
-1. Implement Phase 1 POC: add deps (`exceljs`, `docx`, `file-saver`) + build export functions for 1 dummy payload.
-2. Review POC output: PDF/Excel/Word layout vs Hour Meter.docx (iterate until acceptable).
-3. Implement backend schema updates + new report endpoint.
-4. Update Units/Ops UI forms to capture new fields.
-5. Integrate export buttons in Reports per Unit using real payload + nomor LP/TTP.
+## 3) Next Actions (revisi)
+**Prinsip:** pertahankan fitur/data yang stabil; tidak ada perubahan kecuali diperlukan untuk integrasi/perbaikan.
+
+### Phase 8 — (A) WhatsApp Cloud API Production Hardening (sebelum deploy) — Status: COMPLETED (iteration_7: backend 95%→fix PIN order, frontend 100%, security 100%)
+**Tujuan:** memastikan integrasi WA aman/andal di produksi: tidak dobel kirim, ada retry aman, ada status delivery, audit lengkap, dan tidak mengklaim “Terhubung” sebelum E2E real berhasil.
+
+**Catatan kondisi Meta dari user:**
+- Business Portfolio: **BELUM ADA**.
+- Nomor WA perusahaan: **masih aktif** di aplikasi WhatsApp/WA Business.
+  - Untuk Cloud API “langsung” (tanpa program coexistence), nomor harus **dimigrasi** (hapus akun WA di nomor tsb) atau pakai **nomor baru**.
+  - Coexistence (pakai nomor yang tetap aktif di WA Business App) umumnya memerlukan jalur **Embedded Signup/Tech Provider/BSP** → kemungkinan **tidak feasible** untuk app sendiri saat ini.
+- Nomor pemilik untuk laporan mingguan: **082343070023** (normalisasi: **6282343070023**).
+
+**Backend**
+- Buat modul pengiriman terpusat (mis. `wa_outbox.py`) dan ubah semua pengiriman WA agar lewat satu jalur ini:
+  - Reply konfirmasi approve (transfer/HM)
+  - Balasan auto-help
+  - Ringkasan harian
+  - (Nanti) pengingat piutang dan laporan mingguan
+- Desain outbox (Mongo):
+  - koleksi `wa_outbox` berisi: `id`, `to`, `type` (text/template), `payload`, `dedupe_key`, `status` (queued/sending/sent/failed), `attempts`, `last_error`, `next_retry_at`, `created_at`, `sent_at`.
+  - `dedupe_key` wajib unik (unique index) agar mencegah pengiriman ganda.
+- Retry aman:
+  - Retry hanya untuk error jaringan/timeout, HTTP **429/5xx**.
+  - Tidak retry untuk **4xx** (kecuali 429).
+  - Backoff bertahap + jitter.
+  - Error message disimpan ter-redact (tanpa token / secret).
+- Endpoint admin:
+  - `POST /api/wa/outbox/retry` (manual retry by id / by status)
+  - `GET /api/wa/outbox` (monitoring)
+- Cron retry outbox:
+  - Tambah cron max 5 total crons (ingat limit platform). Gunakan: setiap **30 menit** (>= 15 menit).
+- Status koneksi WhatsApp di UI:
+  - Level status:
+    1) `not_configured` (env kosong)
+    2) `configured_not_verified` (env terisi tapi belum ada inbound webhook valid dan belum sukses outbound)
+    3) `connected_verified` (sudah terima inbound webhook signed + ada outbound berhasil/delivered)
+  - Simpan “hasil uji koneksi” di DB (mis. `app_settings.key=wa_connection_state`) tanpa menyimpan token.
+- Tambahkan endpoint uji:
+  - `GET /api/wa/cloud/phone-number` untuk verifikasi kredensial (ambil display_phone_number/verified_name/status) via Graph API.
+  - `POST /api/wa/cloud/send-test` untuk mengirim pesan uji (text atau `hello_world` template bila diperlukan).
+- Webhook safety:
+  - Pastikan signature validation tetap on saat `WHATSAPP_APP_SECRET` terisi.
+  - Simpan event status message (sent/delivered/read/failed) untuk update outbox.
+- Dokumen & halaman publik:
+  - Halaman **Kebijakan Privasi** publik: `/kebijakan-privasi` (dibutuhkan untuk App Live).
+  - Buat dokumentasi setup: `/app/memory/PANDUAN_WHATSAPP.md` berisi:
+    - pembuatan Business Portfolio
+    - pembuatan App Meta + penambahan produk WhatsApp
+    - setup webhook (callback URL + verify token)
+    - set Secrets di Emergent (prod)
+    - daftar variabel env yang diperlukan
+    - langkah pengujian end-to-end
+
+**Frontend**
+- Tambah/rapikan UI:
+  - Tombol “Tes Koneksi” (menjalankan `/api/wa/cloud/phone-number`)
+  - Tombol “Kirim Pesan Uji” (menjalankan `/api/wa/cloud/send-test`)
+  - Halaman/panel status koneksi yang tidak misleading (tidak boleh “Terhubung” sebelum verified)
+  - Panel monitoring Outbox (sent/failed/queued) + tombol retry
+- Pastikan tidak ada token/secret tampil di UI.
+
+**Testing (wajib sebelum Phase 9)**
+- Backend tests (testing_agent_v3):
+  - dedupe_key unique, retry logic, redaction, endpoint auth
+  - webhook menerima status update tanpa crash
+- Frontend tests:
+  - status koneksi tampil sesuai state
+  - outbox table render + retry action
+- Security checks:
+  - tidak ada token muncul di response/log/audit detail
+
+### Phase 9 — (B) Deploy + E2E WhatsApp Cloud API dengan nomor nyata (user-driven) — Status: MENUNGGU USER (deploy + Secrets + nomor)
+**Tujuan:** aplikasi benar-benar menerima pesan WA dan mengirim pesan ringkasan/konfirmasi.
+
+**Langkah (dibantu panduan, dieksekusi oleh user):**
+1. User membuat **Meta Business Portfolio**.
+2. User membuat **Meta Developer App** (Business) + tambah produk WhatsApp.
+3. User menyiapkan nomor WA perusahaan:
+   - Opsi 1 (paling realistis untuk Cloud API): **nomor baru**.
+   - Opsi 2 (migrasi nomor lama): **hapus akun WhatsApp** pada nomor itu sebelum registrasi Cloud API.
+   - Opsi coexistence (nomor tetap aktif di WA Business App) kemungkinan perlu Tech Provider/BSP → bukan target awal.
+4. User deploy app (HTTPS otomatis) dan isi Secrets (tanpa mengirim token di chat):
+   - `WHATSAPP_ACCESS_TOKEN`
+   - `WHATSAPP_PHONE_NUMBER_ID`
+   - `WHATSAPP_WABA_ID` (bila diperlukan untuk subscribe)
+   - `WHATSAPP_APP_SECRET`
+   - `WHATSAPP_VERIFY_TOKEN`
+   - `WHATSAPP_API_VERSION`
+   - `WEBHOOK_CRON_SECRET`
+5. Set webhook callback ke `https://<domain>/api/whatsapp/webhook` dan verify token sesuai Secrets.
+6. Uji E2E:
+   - Kirim foto bukti transfer & foto HM dari nomor operator/pengurus → masuk Kotak Masuk WA.
+   - Uji approve manual → balasan terkirim.
+   - Uji auto-approve (≥90% dan tanpa warning) → record tercipta dan balasan terkirim.
+   - Uji daily summary run-now → terkirim (mode text bila 24h window, atau template bila di luar window).
+7. Setelah uji sukses barulah status UI berubah menjadi “Terhubung (Terverifikasi)”.
+
+**Testing**
+- Dokumentasikan hasil uji (tanggal, nomor uji, screenshot log/status).
+
+### Phase 10 — (C2) Peringatan HM Janggal
+**Tujuan:** HM mencurigakan tidak boleh lolos auto-approve.
+
+**Rule minimum:**
+- HM turun dibanding HM terakhir unit (sudah ada warning dasar, akan dipertegas menjadi auto-block).
+- HM melonjak tidak wajar (threshold configurable, misal > X jam/hari atau > Y% dari rata-rata 7 hari).
+- Foto tidak terbaca jelas / HM=0 → selalu manual.
+
+**Backend**
+- Tambah deteksi anomali HM:
+  - simpan `hm_anomaly` pada `wa_inbox.auto_check.reasons` atau field khusus.
+  - jika anomaly terdeteksi → `eligible=false` untuk auto-approve.
+- Tambah pengaturan ambang anomali HM (di tab Otomasi).
+- Audit: setiap auto-block karena anomali dicatat.
+
+**Frontend**
+- Tampilkan badge/peringatan jelas di Kotak Masuk WA.
+- Pengaturan ambang: on/off, threshold lonjakan.
+
+**Testing**
+- Backend unit tests untuk kasus hm turun/lonjak.
+- UI memastikan item masuk manual queue.
+
+### Phase 11 — (C3) Pengingat Piutang (WhatsApp)
+**Tujuan:** kirim pengingat otomatis berdasar umur piutang & ambang nominal, bisa dikonfigurasi, tidak spam, tercatat.
+
+**Backend**
+- Setting:
+  - enable/disable
+  - jam kirim (WITA)
+  - threshold nominal
+  - umur piutang minimal (hari)
+  - penerima (pengurus dan/atau pemilik)
+- Hitung piutang “benar-benar belum dibayar” dari data tervalidasi (ops + kas masuk) per pengurus.
+- Mekanisme anti-spam:
+  - dedupe per pengurus per hari/minggu
+  - simpan log pengiriman dan status outbox
+- Cron: minimal 1x/hari (memperhatikan limit 5 cron total; gabungkan bila perlu).
+
+**Frontend**
+- Halaman pengaturan pengingat piutang + preview penerima.
+- Log pengiriman.
+
+**Testing**
+- Backend: perhitungan, dedupe, retry via outbox.
+- UI: preview dan toggle.
+
+### Phase 12 — (C4) Laporan Mingguan Pemilik (Senin 08:00 WITA)
+**Tujuan:** laporan otomatis ke pemilik setiap Senin 08:00 WITA.
+
+**Spesifikasi isi:**
+- total HM per unit (mingguan)
+- total pemasukan (kas masuk)
+- piutang berjalan
+- pembayaran diterima
+- daftar transaksi masih perlu verifikasi
+
+**Backend**
+- Cron: `0 8 * * 1` timezone Asia/Makassar.
+- Penerima: pemilik **6282343070023** (bisa diubah di Settings).
+- Template Meta (Utility) untuk pengiriman di luar 24 jam window.
+- Audit log + outbox.
+
+**Frontend**
+- Pengaturan laporan mingguan: enabled, penerima, template.
+- Preview laporan.
+
+**Testing**
+- Backend: generator laporan + idempotensi.
+- UI: preview + history.
 
 ## 4) Success Criteria
 - App UI berbranding **TRIRARA TUNGGAL PUTRA** + logo, dark navy theme konsisten.
 - Data tambahan dapat disimpan & dibaca kembali (Unit & Ops) tanpa breaking changes.
 - Export **Hour Meter** berhasil untuk **PDF + Excel + Word** dengan struktur section sesuai docx.
 - Nomor laporan LP/TTP otomatis tercantum pada export dan arsip nomor tetap berjalan.
-- Semua halaman existing lulus smoke test (CRUD + export lama + dashboard).
+- WhatsApp produksi:
+  - webhook menerima pesan gambar nyata dan masuk Kotak Masuk WA.
+  - balasan konfirmasi approve terkirim.
+  - Ringkasan Harian 20:00 WITA terkirim (text atau template sesuai aturan 24 jam).
+  - tidak ada pengiriman ganda, ada retry aman.
+  - audit log lengkap untuk setiap aksi dan pengiriman.
+- HM janggal selalu masuk verifikasi manual dan tidak auto-approve.
+- Pengingat piutang dan laporan mingguan dapat diaktif/nonaktifkan, terjadwal WITA, anti-spam, dan tercatat.
+- Deployment aman: **database tidak dihapus/di-reset**.
+
 ---
 ## Phase 4 — Keuangan & Rekap Bulanan Excavator (Status: COMPLETED)
 User choices: (a) Keuangan dulu, (b) Rekap Bulanan di halaman Laporan (tab), (c) Surat Keluar dibuat sekarang.

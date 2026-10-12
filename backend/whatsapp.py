@@ -10,6 +10,7 @@ import hmac
 import os
 import uuid
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import Any, Callable, Optional
 
 import httpx
@@ -19,6 +20,8 @@ from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel
 
 from wa_ai import AI_MODEL, extract_image, match_unit, normalize_image
+from wa_outbox import (Outbox, connection_state, graph_call, graph_url, mark_connection, norm_phone, redact,
+                       save_phone_check, wa_configured)
 
 MAX_BYTES = 12 * 1024 * 1024
 
@@ -31,12 +34,8 @@ def _env(k):
     return (os.environ.get(k) or "").strip()
 
 
-def wa_configured() -> bool:
-    return all(_env(k) for k in ("WHATSAPP_ACCESS_TOKEN", "WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_APP_SECRET", "WHATSAPP_VERIFY_TOKEN"))
-
-
 def _graph(path: str) -> str:
-    return f"https://graph.facebook.com/{_env('WHATSAPP_API_VERSION') or 'v25.0'}/{path}"
+    return graph_url(path)
 
 
 async def wa_download_media(media_id: str) -> tuple[bytes, str]:
@@ -49,29 +48,6 @@ async def wa_download_media(media_id: str) -> tuple[bytes, str]:
     if len(r.content) > MAX_BYTES:
         raise ValueError("Gambar terlalu besar")
     return r.content, r.headers.get("content-type", "image/jpeg")
-
-
-async def wa_send_text(to: str, body: str) -> bool:
-    if not wa_configured() or not to:
-        return False
-    try:
-        async with httpx.AsyncClient(timeout=30) as c:
-            r = await c.post(
-                _graph(f"{_env('WHATSAPP_PHONE_NUMBER_ID')}/messages"),
-                headers={"Authorization": f"Bearer {_env('WHATSAPP_ACCESS_TOKEN')}"},
-                json={"messaging_product": "whatsapp", "recipient_type": "individual", "to": to, "type": "text",
-                      "text": {"preview_url": False, "body": body[:4096]}},
-            )
-        return r.status_code < 300
-    except Exception:
-        return False
-
-
-def norm_phone(p: str) -> str:
-    d = "".join(ch for ch in (p or "") if ch.isdigit())
-    if d.startswith("0"):
-        d = "62" + d[1:]
-    return d
 
 
 def _idr(n) -> str:
@@ -96,6 +72,15 @@ class DraftIn(BaseModel):
 def build_whatsapp_router(db, require_admin: Callable, hooks: dict) -> APIRouter:
     """hooks: {'next_bukti': async fn(db, prefix) -> str}"""
     r = APIRouter()
+    outbox = Outbox(db)
+
+    @r.on_event("startup")
+    async def _wa_indexes():
+        await outbox.ensure_indexes()
+
+    async def send_text(to: str, body: str, kind: str, key: str, label: str, ref: Optional[dict] = None) -> dict:
+        return await outbox.send(to, {"type": "text", "text": {"preview_url": False, "body": body[:4096]}}, kind, key,
+                                 actor="Sistem", ref=ref or {}, label=label)
 
     AUTO_DEFAULT = {"transfer_enabled": False, "hm_enabled": False, "min_confidence": 0.9}
 
@@ -274,6 +259,7 @@ def build_whatsapp_router(db, require_admin: Callable, hooks: dict) -> APIRouter
             "webhook_path": "/api/whatsapp/webhook",
             "missing": [k for k in ("WHATSAPP_ACCESS_TOKEN", "WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_APP_SECRET", "WHATSAPP_VERIFY_TOKEN") if not _env(k)],
             "ai_model": AI_MODEL,
+            "connection": await connection_state(db),
             "counts": {s: await db.wa_inbox.count_documents({"status": s}) for s in ("processing", "pending", "duplicate", "approved", "rejected", "error")},
         }
 
@@ -432,11 +418,13 @@ def build_whatsapp_router(db, require_admin: Callable, hooks: dict) -> APIRouter
 
         await db.wa_inbox.update_one({"id": iid, "status": {"$ne": "approved"}}, {"$set": {
             "status": "approved", "jenis": jenis, "draft": d, "result": result, "reviewed_by": actor, "reviewed_at": _now(), "auto_approved": auto}})
-        replied = False
+        replied, reply_status = False, ""
         if item.get("source") == "whatsapp" and item.get("from_phone"):
-            replied = await wa_send_text(item["from_phone"], reply + ("\n(Tercatat otomatis)" if auto else ""))
-            await audit("reply_sent" if replied else "reply_failed", "Sistem", iid, "Balasan konfirmasi WA" + ("" if replied else " gagal terkirim"))
-        return {"ok": True, "result": result, "replied": replied}
+            ob = await send_text(item["from_phone"], reply + ("\n(Tercatat otomatis)" if auto else ""), "reply",
+                                 f"reply:{iid}", "Balasan konfirmasi", {"inbox_id": iid})
+            reply_status = ob.get("status", "")
+            replied = reply_status in ("sent", "delivered", "read")
+        return {"ok": True, "result": result, "replied": replied, "reply_status": reply_status}
 
     # ---------- Pengaturan otomatis + audit ----------
     class AutoIn(BaseModel):
@@ -500,6 +488,130 @@ def build_whatsapp_router(db, require_admin: Callable, hooks: dict) -> APIRouter
         await db.wa_contacts.delete_one({"id": cid})
         return {"ok": True}
 
+    # ---------- Koneksi Cloud API: uji, daftar nomor, outbox ----------
+    class SendTestIn(BaseModel):
+        to: str
+        mode: str = "text"  # text | template
+        text: str = ""
+        template_name: str = "hello_world"
+        template_lang: str = "en_US"
+
+    class PinIn(BaseModel):
+        pin: str
+
+    def _need_config():
+        if not wa_configured():
+            raise HTTPException(400, "Kredensial WhatsApp belum lengkap di server (Secrets)")
+
+    @r.get("/api/wa/connection")
+    async def get_connection(admin=Depends(require_admin)):
+        return await connection_state(db)
+
+    @r.post("/api/wa/cloud/check")
+    async def cloud_check(admin=Depends(require_admin)):
+        _need_config()
+        code, body = await graph_call("GET", _env("WHATSAPP_PHONE_NUMBER_ID"), params={
+            "fields": "display_phone_number,verified_name,quality_rating,code_verification_status,platform_type,name_status"})
+        ok = code == 200
+        info = {"ok": ok, "http": code}
+        if ok:
+            info.update({k: body.get(k) for k in ("display_phone_number", "verified_name", "quality_rating",
+                                                   "code_verification_status", "platform_type", "name_status")})
+        else:
+            info["error"] = redact(((body.get("error") or {}).get("message")) or "Gagal menghubungi Meta")
+        await save_phone_check(db, info)
+        await audit("wa_check", admin.name, "", ("Tes koneksi berhasil: " + str(info.get("display_phone_number") or "")) if ok
+                    else f"Tes koneksi gagal: {info.get('error')}", {"ok": ok, "http": code})
+        return info
+
+    @r.post("/api/wa/cloud/send-test")
+    async def cloud_send_test(body: SendTestIn, admin=Depends(require_admin)):
+        _need_config()
+        to = norm_phone(body.to)
+        if len(to) < 9:
+            raise HTTPException(400, "Nomor tujuan tidak valid")
+        slot = int(datetime.now(timezone.utc).timestamp() // 30)  # cegah klik ganda dalam 30 detik
+        if body.mode == "template":
+            name = (body.template_name or "hello_world").strip()
+            if not all(ch.islower() or ch.isdigit() or ch == "_" for ch in name):
+                raise HTTPException(400, "Nama template tidak valid")
+            msg = {"type": "template", "template": {"name": name, "language": {"code": (body.template_lang or "en_US").strip()}}}
+        else:
+            text = (body.text or "Pesan uji dari aplikasi TRIRARA TUNGGAL PUTRA.").strip()
+            msg = {"type": "text", "text": {"preview_url": False, "body": text[:1000]}}
+        doc = await outbox.send(to, msg, "test", f"test:{to}:{body.mode}:{slot}", actor=admin.name, label="Pesan uji")
+        return {k: doc.get(k) for k in ("id", "status", "error", "attempts", "wa_message_id", "deduped", "to")}
+
+    @r.post("/api/wa/cloud/register")
+    async def cloud_register(body: PinIn, admin=Depends(require_admin)):
+        pin = (body.pin or "").strip()
+        if not (len(pin) == 6 and pin.isdigit()):
+            raise HTTPException(400, "PIN harus 6 digit angka")
+        _need_config()
+        code, res = await graph_call("POST", f"{_env('WHATSAPP_PHONE_NUMBER_ID')}/register", json={"messaging_product": "whatsapp", "pin": pin})
+        ok = code < 300 and bool(res.get("success", True))
+        err = "" if ok else redact(((res.get("error") or {}).get("message")) or "Gagal")
+        await audit("wa_register", admin.name, "", "Nomor terdaftar di Cloud API" if ok else f"Pendaftaran nomor gagal: {err}", {"ok": ok, "http": code})
+        return {"ok": ok, "http": code, "error": err}
+
+    @r.post("/api/wa/cloud/subscribe")
+    async def cloud_subscribe(admin=Depends(require_admin)):
+        _need_config()
+        waba = _env("WHATSAPP_WABA_ID")
+        if not waba:
+            raise HTTPException(400, "WHATSAPP_WABA_ID belum diisi di Secrets")
+        code, res = await graph_call("POST", f"{waba}/subscribed_apps")
+        ok = code < 300 and bool(res.get("success", True))
+        err = "" if ok else redact(((res.get("error") or {}).get("message")) or "Gagal")
+        await audit("wa_subscribe", admin.name, "", "Aplikasi berlangganan webhook WABA" if ok else f"Langganan webhook gagal: {err}", {"ok": ok, "http": code})
+        return {"ok": ok, "http": code, "error": err}
+
+    @r.get("/api/wa/outbox")
+    async def list_outbox(status: Optional[str] = None, kind: Optional[str] = None, limit: int = 200, admin=Depends(require_admin)):
+        q: dict[str, Any] = {}
+        if status and status != "all":
+            q["status"] = {"$in": status.split(",")}
+        if kind and kind != "all":
+            q["kind"] = {"$in": kind.split(",")}
+        rows = await db.wa_outbox.find(q, {"_id": 0}).sort("created_at", -1).to_list(min(max(limit, 1), 1000))
+        counts = {s: await db.wa_outbox.count_documents({"status": s}) for s in ("sending", "sent", "delivered", "read", "failed", "simulated")}
+        return {"items": rows, "counts": counts}
+
+    @r.post("/api/wa/outbox/{oid}/retry")
+    async def retry_outbox(oid: str, admin=Depends(require_admin)):
+        try:
+            doc = await outbox.retry(oid, admin.name)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return {k: doc.get(k) for k in ("id", "status", "error", "attempts", "wa_message_id")}
+
+    @r.post("/api/cron/wa-outbox-retry")
+    async def cron_outbox_retry(request: Request, background: BackgroundTasks):
+        # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+        secret = _env("WEBHOOK_CRON_SECRET")
+        auth = request.headers.get("authorization", "")
+        token = auth[7:] if auth.lower().startswith("bearer ") else ""
+        if not secret or not token or not hmac.compare_digest(token, secret):
+            return Response(content='{"detail":"Unauthorized"}', status_code=401, media_type="application/json")
+        try:
+            env = await request.json() if (await request.body()) else {}
+        except ValueError:
+            return Response(content='{"detail":"Invalid body"}', status_code=400, media_type="application/json")
+        if env is not None and not isinstance(env, dict):
+            return Response(content='{"detail":"Invalid body"}', status_code=400, media_type="application/json")
+        run_key = request.headers.get("x-webhook-id") or (env or {}).get("run_id") or f"manual-{uuid.uuid4()}"
+        res = await db.cron_runs.update_one({"run_id": f"retry:{run_key}"}, {"$setOnInsert": {"run_id": f"retry:{run_key}", "job": "wa-outbox-retry", "received_at": _now()}}, upsert=True)
+        if res.upserted_id is None:
+            return {"status": "duplicate"}
+
+        async def _job():
+            out = await outbox.retry_due()
+            await db.cron_runs.update_one({"run_id": f"retry:{run_key}"}, {"$set": {"result": out, "finished_at": _now()}})
+            if out["retried"] or out["stuck_marked"]:
+                await audit("outbox_retry_run", "Penjadwal retry", "", f"Retry terjadwal: dicoba {out['retried']}, terkirim {out['sent']}, gagal {out['failed']}, macet {out['stuck_marked']}", out)
+        background.add_task(_job)
+        return {"status": "accepted"}
+
     # ---------- Webhook WhatsApp (publik) ----------
     @r.get("/api/whatsapp/webhook")
     async def verify(request: Request):
@@ -515,26 +627,47 @@ def build_whatsapp_router(db, require_admin: Callable, hooks: dict) -> APIRouter
             for change in entry.get("changes", []):
                 value = change.get("value", {})
                 names = {c.get("wa_id"): (c.get("profile") or {}).get("name", "") for c in value.get("contacts", [])}
+                for st in value.get("statuses", []) or []:
+                    try:
+                        await outbox.apply_status(st)
+                    except Exception as e:  # noqa: BLE001
+                        await audit("webhook_error", "Sistem", "", f"Status webhook gagal diproses: {redact(type(e).__name__)}")
                 for m in value.get("messages", []):
                     mid, sender = m.get("id"), m.get("from")
                     if sender:
                         await db.wa_last_inbound.update_one({"phone": norm_phone(sender)}, {"$set": {"phone": norm_phone(sender), "at": _now()}}, upsert=True)
-                    if not mid or not sender or await db.wa_inbox.find_one({"message_id": mid}):
+                        await mark_connection(db, "inbound", sender)
+                    if not mid or not sender:
                         continue
-                    if m.get("type") == "image":
+                    # idempoten: Meta bisa mengirim ulang webhook yang sama
+                    seen = await db.wa_seen_messages.update_one({"message_id": mid}, {"$setOnInsert": {"message_id": mid, "at": _now()}}, upsert=True)
+                    if seen.upserted_id is None or await db.wa_inbox.find_one({"message_id": mid}):
+                        continue
+                    mtype = m.get("type")
+                    doc_img = m.get("document") or {}
+                    if mtype == "document" and str(doc_img.get("mime_type", "")).startswith("image/"):
+                        mtype, m = "image", {**m, "image": doc_img}
+                    if mtype == "image":
                         img = m.get("image") or {}
                         try:
                             data, mime = await wa_download_media(img["id"])
                             doc = await create_item(data, mime, img.get("caption", ""), "whatsapp", sender, names.get(sender, ""), mid)
                             await audit("received", f"WA {names.get(sender, '') or sender}", doc["id"], f"Pesan WhatsApp · ket {img.get('caption') or '-'}")
-                            await wa_send_text(sender, "Gambar diterima, sedang diproses dan menunggu verifikasi admin.")
+                            await send_text(sender, "Gambar diterima, sedang diproses AI. Anda akan menerima konfirmasi setelah tercatat.",
+                                            "ack", f"ack:{mid}", "Tanda terima gambar", {"inbox_id": doc["id"]})
                             await process_item(doc["id"])
                         except Exception as e:  # noqa: BLE001
-                            await db.wa_inbox.insert_one({"id": str(uuid.uuid4()), "source": "whatsapp", "message_id": mid, "from_phone": sender,
+                            eid = str(uuid.uuid4())
+                            await db.wa_inbox.insert_one({"id": eid, "source": "whatsapp", "message_id": mid, "from_phone": norm_phone(sender),
                                                           "from_name": names.get(sender, ""), "caption": img.get("caption", ""), "status": "error",
-                                                          "error": f"Gagal mengunduh gambar: {str(e)[:150]}", "received_at": _now(), "draft": {}, "warnings": []})
-                    elif m.get("type") == "text":
-                        await wa_send_text(sender, "Kirim FOTO bukti transfer atau foto layar HM, dengan keterangan unit (contoh: Sdlg 10).")
+                                                          "error": f"Gagal mengunduh gambar: {redact(str(e))[:150]}", "received_at": _now(), "draft": {}, "warnings": []})
+                            await audit("received_error", f"WA {names.get(sender, '') or sender}", eid, f"Gagal mengunduh gambar: {redact(type(e).__name__)}")
+                    elif mtype == "text":
+                        await audit("text_received", f"WA {names.get(sender, '') or sender}", "", "Pesan teks diterima (bukan gambar)")
+                        # anti-spam: panduan format maks. 1x per nomor per hari (WITA)
+                        today = datetime.now(timezone.utc).astimezone(ZoneInfo("Asia/Makassar")).strftime("%Y-%m-%d")
+                        await send_text(sender, "Kirim FOTO bukti transfer atau foto layar HM, dengan keterangan unit (contoh: Sdlg 10).",
+                                        "help", f"help:{norm_phone(sender)}:{today}", "Panduan format")
 
     @r.post("/api/whatsapp/webhook")
     async def receive(request: Request, background: BackgroundTasks):

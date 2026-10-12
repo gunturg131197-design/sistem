@@ -18,8 +18,11 @@ export const AUDIT_LABEL = {
   received: "Diterima", ai_processed: "Dibaca AI", ai_error: "AI gagal", auto_approved: "Disimpan otomatis", auto_blocked: "Masuk verifikasi manual",
   approved: "Disetujui manual", rejected: "Ditolak", reprocessed: "Dibaca ulang", deleted: "Dihapus", edited: "Draft diubah",
   reply_sent: "Balasan WA terkirim", reply_failed: "Balasan WA gagal", settings_changed: "Pengaturan diubah", summary_run: "Ringkasan harian",
+  wa_sent: "WA terkirim ke Meta", wa_failed: "WA gagal terkirim", wa_simulated: "WA simulasi", wa_deduped: "WA tidak dikirim ganda", wa_retry: "WA kirim ulang",
+  wa_delivery_failed: "WA gagal diantar", wa_connection_verified: "Koneksi terverifikasi", wa_check: "Tes koneksi", wa_register: "Daftar nomor",
+  wa_subscribe: "Langganan webhook", outbox_retry_run: "Retry terjadwal", text_received: "Pesan teks masuk", received_error: "Gagal unduh gambar", webhook_error: "Webhook error",
 };
-const AUDIT_TONE = { auto_approved: "text-emerald-400", approved: "text-emerald-400", auto_blocked: "text-primary", rejected: "text-accent", ai_error: "text-accent", reply_failed: "text-accent", deleted: "text-accent" };
+const AUDIT_TONE = { auto_approved: "text-emerald-400", approved: "text-emerald-400", auto_blocked: "text-primary", rejected: "text-accent", ai_error: "text-accent", reply_failed: "text-accent", deleted: "text-accent", wa_failed: "text-accent", wa_delivery_failed: "text-accent", received_error: "text-accent", wa_sent: "text-emerald-400", wa_connection_verified: "text-emerald-400" };
 const fmt = (s) => (s ? new Date(s).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "-");
 
 export function AuditList({ rows, compact = false, testid = "wa-audit-list" }) {

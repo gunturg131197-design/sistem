@@ -1,0 +1,81 @@
+{
+  "summary": "Completed comprehensive testing of WhatsApp Cloud API integration (preview mode - not configured). Self-tests passed, backend API endpoints working correctly, frontend UI functional with all tabs and features accessible.",
+  "backend_issues": {
+    "critical_bugs": [],
+    "minor_issues": [
+      {
+        "endpoint": "POST /api/wa/cloud/register",
+        "issue": "PIN validation happens after credentials check - endpoint returns 400 'Kredensial WhatsApp belum lengkap' before validating PIN format",
+        "impact": "Low - This is actually correct behavior (fail fast on missing credentials)",
+        "fix_priority": "LOW"
+      }
+    ],
+    "flaky_endpoints": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "minor_issues": [
+      {
+        "component": "Various API calls",
+        "issue": "401 errors in console logs (likely from unauthenticated requests during page load)",
+        "impact": "Low - Does not affect functionality",
+        "fix_priority": "LOW"
+      }
+    ]
+  },
+  "passed_tests": [
+    "Self-test: t_outbox.py - All outbox module tests passed (send, dedupe, retry, status, connection state, token redaction)",
+    "Self-test: t_webhook.py - All webhook tests passed (verify, signature validation, message handling, status updates, connection state)",
+    "Backend: Login authentication (admin and operator)",
+    "Backend: GET /api/wa/connection - Returns not_configured status with missing credentials list",
+    "Backend: GET /api/wa/status - Returns configured=false and connection level",
+    "Backend: POST /api/wa/cloud/check - Returns 400 when not configured",
+    "Backend: POST /api/wa/cloud/send-test - Returns 400 when not configured",
+    "Backend: POST /api/wa/cloud/register - Returns 400 when not configured",
+    "Backend: POST /api/wa/cloud/subscribe - Returns 400 when not configured",
+    "Backend: GET /api/wa/outbox - Returns items and counts",
+    "Backend: POST /api/wa/outbox/{id}/retry - Returns 400 for invalid ID",
+    "Backend: POST /api/cron/wa-outbox-retry - Requires authentication (401 without/wrong token)",
+    "Backend: POST /api/cron/wa-outbox-retry - Accepts valid bearer token",
+    "Backend: POST /api/cron/wa-outbox-retry - Detects duplicate webhook IDs",
+    "Backend: POST /api/cron/wa-outbox-retry - Validates JSON body (400 for non-object)",
+    "Backend: GET /api/wa/summary/preview - Returns tanggal and items",
+    "Backend: POST /api/wa/summary/run - Returns run_id and counts (preview mode)",
+    "Backend: Access control - Operator (budi) denied access to admin endpoints (403)",
+    "Backend: Access control - Unauthenticated users denied access (401)",
+    "Backend: Security - No tokens found in backend logs",
+    "Frontend: Public /kebijakan-privasi page loads without login (9 sections)",
+    "Frontend: Login as admin/admin123 successful",
+    "Frontend: /wa-inbox page loads correctly",
+    "Frontend: Header badge shows 'WhatsApp Belum Dikonfigurasi · mode upload'",
+    "Frontend: Clicking header badge opens Koneksi tab",
+    "Frontend: Connection status shows 'Belum Dikonfigurasi'",
+    "Frontend: 4 checklist items present (credentials, API test, inbound, outbound)",
+    "Frontend: Test tools disabled when not configured",
+    "Frontend: PIN input accepts only digits, max 6 characters",
+    "Frontend: Webhook and privacy URLs displayed with copy buttons",
+    "Frontend: 8-step accordion guide present",
+    "Frontend: Pesan Keluar tab loads with counts, filters, and table",
+    "Frontend: Empty state displayed when no outbox messages",
+    "Frontend: All tabs functional (Inbox, Contacts, Automation, Summary, Outbox, Settings)"
+  ],
+  "test_report_links": [
+    "/app/backend_test.py",
+    "/app/tests/wa_selftest/t_outbox.py",
+    "/app/tests/wa_selftest/t_webhook.py"
+  ],
+  "action_item_for_main_agent": "",
+  "updated_files": [
+    "/app/backend_test.py"
+  ],
+  "success_percentage": {
+    "backend": "95% (19/20 tests passed - 1 false positive on token detection in field names)",
+    "frontend": "100% (all UI elements and tabs functional)",
+    "self_tests": "100% (t_outbox.py and t_webhook.py passed)",
+    "security": "100% (no token leakage in logs or responses)"
+  },
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_test_itself": true
+}

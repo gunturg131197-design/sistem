@@ -14,6 +14,7 @@ import UsersPage from "@/pages/UsersPage";
 import PengurusPage from "@/pages/PengurusPage";
 import FinancePage from "@/pages/FinancePage";
 import WhatsAppInboxPage from "@/pages/WhatsAppInboxPage";
+import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import AppShell from "@/components/AppShell";
 import "@/App.css";
 
@@ -43,6 +44,7 @@ function AppRouter() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/kebijakan-privasi" element={<PrivacyPolicy />} />
       <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/units" element={<ProtectedRoute><UnitsPage /></ProtectedRoute>} />
       <Route path="/operations" element={<ProtectedRoute><OperationsPage /></ProtectedRoute>} />

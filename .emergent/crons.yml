@@ -7,3 +7,10 @@ crons:
     endpoint: "{{BASE_URL}}/api/cron/daily-summary"
     method: POST
     enabled: true
+  - name: wa-outbox-retry
+    description: "Kirim ulang aman pesan WhatsApp yang gagal sementara (429/5xx/koneksi) setiap 30 menit"
+    cron: "*/30 * * * *"
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    endpoint: "{{BASE_URL}}/api/cron/wa-outbox-retry"
+    method: POST
+    enabled: true

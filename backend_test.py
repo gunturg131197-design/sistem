@@ -1,549 +1,514 @@
 #!/usr/bin/env python3
-"""
-Backend API Test Suite for TRIRARA TUNGGAL PUTRA Hour Meter System
-Tests new Hour Meter fields, operations PATCH, reports extras, and all integrations
-"""
+"""Backend API testing for WhatsApp Cloud API integration."""
 import requests
+import sys
 import json
-from typing import Dict, Any, Optional
+from datetime import datetime
 
-# Base URL from frontend/.env
-BASE_URL = "https://theme-logo-studio.preview.emergentagent.com/api"
+BASE_URL = "https://theme-logo-studio.preview.emergentagent.com"
 
-# Test credentials
-ADMIN_CREDS = {"username": "admin", "password": "admin123"}
-OPERATOR_CREDS = {"username": "budi", "password": "budi123"}
+class Colors:
+    GREEN = '\033[92m'
+    RED = '\033[91m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    END = '\033[0m'
 
-# Session storage
-admin_session = None
-operator_session = None
-test_data = {}
+class APITester:
+    def __init__(self):
+        self.session = requests.Session()
+        self.tests_run = 0
+        self.tests_passed = 0
+        self.tests_failed = 0
+        self.admin_token = None
+        self.operator_token = None
 
+    def log(self, msg, color=Colors.BLUE):
+        print(f"{color}{msg}{Colors.END}")
 
-def login(username: str, password: str) -> requests.Session:
-    """Login and return session with cookie"""
-    session = requests.Session()
-    response = session.post(
-        f"{BASE_URL}/auth/login",
-        json={"username": username, "password": password}
-    )
-    if response.status_code != 200:
-        raise Exception(f"Login failed for {username}: {response.status_code} {response.text}")
-    
-    user_data = response.json()
-    print(f"✓ Logged in as {username} (role: {user_data.get('role')})")
-    return session, user_data
-
-
-def test_units_new_fields():
-    """Test 1: Units API with new Hour Meter fields"""
-    print("\n=== TEST 1: UNITS WITH NEW HOUR METER FIELDS ===")
-    
-    # Create unit with all new fields
-    unit_payload = {
-        "unit_name": "TEST_Komatsu PC200",
-        "nomor_lambung": "TEST-EX-01",
-        "serial_number": "TEST-SN-12345",
-        "operator_id": test_data.get("operator_user_id"),
-        "operator_name": "Budi Operator",
-        "pengurus": "Pak Tono",
-        "merek_type": "Komatsu PC200-8",
-        "pemilik_alat": "CV. Trirara Tunggal Putra",
-        "nama_proyek": "Normalisasi Sungai Ciliwung",
-        "lokasi_proyek": "Jakarta Timur",
-        "pengawas_lapangan": "Ir. Bambang Sutrisno"
-    }
-    
-    response = admin_session.post(f"{BASE_URL}/units", json=unit_payload)
-    if response.status_code != 200:
-        print(f"✗ Failed to create unit: {response.status_code} {response.text}")
-        return False
-    
-    unit = response.json()
-    test_data["unit_id"] = unit["id"]
-    print(f"✓ Created unit: {unit['unit_name']} - {unit['nomor_lambung']}")
-    
-    # Verify all new fields are returned
-    errors = []
-    expected_fields = ["merek_type", "pemilik_alat", "nama_proyek", "lokasi_proyek", "pengawas_lapangan"]
-    for field in expected_fields:
-        if field not in unit:
-            errors.append(f"Missing field: {field}")
-        elif unit[field] != unit_payload[field]:
-            errors.append(f"{field}: expected '{unit_payload[field]}', got '{unit[field]}'")
-    
-    if errors:
-        print("✗ Unit field validation errors:")
-        for err in errors:
-            print(f"  - {err}")
-        return False
-    
-    print(f"✓ All new fields present and correct:")
-    print(f"  - Merek/Type: {unit['merek_type']}")
-    print(f"  - Pemilik Alat: {unit['pemilik_alat']}")
-    print(f"  - Nama Proyek: {unit['nama_proyek']}")
-    print(f"  - Lokasi Proyek: {unit['lokasi_proyek']}")
-    print(f"  - Pengawas Lapangan: {unit['pengawas_lapangan']}")
-    
-    # Test PATCH unit
-    patch_payload = {
-        **unit_payload,
-        "nama_proyek": "Pembangunan Jalan Tol",
-        "lokasi_proyek": "Bekasi"
-    }
-    
-    response = admin_session.patch(f"{BASE_URL}/units/{unit['id']}", json=patch_payload)
-    if response.status_code != 200:
-        print(f"✗ Failed to patch unit: {response.status_code} {response.text}")
-        return False
-    
-    updated_unit = response.json()
-    if updated_unit["nama_proyek"] != "Pembangunan Jalan Tol":
-        print(f"✗ PATCH unit failed: nama_proyek not updated")
-        return False
-    
-    print(f"✓ PATCH unit successful: nama_proyek updated to '{updated_unit['nama_proyek']}'")
-    
-    # GET units and verify fields are returned
-    response = admin_session.get(f"{BASE_URL}/units")
-    if response.status_code != 200:
-        print(f"✗ Failed to get units: {response.status_code}")
-        return False
-    
-    units = response.json()
-    found = False
-    for u in units:
-        if u["id"] == test_data["unit_id"]:
-            found = True
-            if not all(field in u for field in expected_fields):
-                print(f"✗ GET /units missing new fields")
-                return False
-    
-    if not found:
-        print(f"✗ Created unit not found in GET /units")
-        return False
-    
-    print(f"✓ GET /units returns all new fields correctly")
-    return True
-
-
-def test_operations_new_fields():
-    """Test 2: Operations API with new Hour Meter fields"""
-    print("\n=== TEST 2: OPERATIONS WITH NEW HOUR METER FIELDS ===")
-    
-    # Create operation with all new fields
-    kondisi_alat = {
-        "mesin": {"status": "baik", "keterangan": "Mesin normal"},
-        "sistem_hidrolik": {"status": "baik", "keterangan": ""},
-        "ban_track": {"status": "tidak", "keterangan": "Track aus, perlu ganti"},
-        "lampu": {"status": "baik", "keterangan": ""},
-        "rem": {"status": "baik", "keterangan": ""},
-        "kelistrikan": {"status": "tidak", "keterangan": "Aki lemah"}
-    }
-    
-    operation_payload = {
-        "unit_id": test_data["unit_id"],
-        "tanggal": "2026-02-15",
-        "hour_meter_awal": 100.5,
-        "hour_meter_akhir": 108.5,
-        "jumlah_cars": 12,
-        "pengurus": "Pak Tono",
-        "keterangan": "Galian saluran, hujan 1 jam",
-        "downtime_jam": 1.5,
-        "solar_liter": 45.0,
-        "catatan_operator": "Track mulai aus, perlu pengecekan. Aki lemah, minta ganti.",
-        "kondisi_alat": kondisi_alat
-    }
-    
-    response = operator_session.post(f"{BASE_URL}/operations", json=operation_payload)
-    if response.status_code != 200:
-        print(f"✗ Failed to create operation: {response.status_code} {response.text}")
-        return False
-    
-    op = response.json()
-    test_data["operation_id"] = op["id"]
-    print(f"✓ Created operation: {op['tanggal']} - {op['total_jam']} jam")
-    
-    # Verify all new fields
-    errors = []
-    
-    if op.get("keterangan") != operation_payload["keterangan"]:
-        errors.append(f"keterangan mismatch")
-    
-    if op.get("downtime_jam") != operation_payload["downtime_jam"]:
-        errors.append(f"downtime_jam: expected {operation_payload['downtime_jam']}, got {op.get('downtime_jam')}")
-    
-    if op.get("solar_liter") != operation_payload["solar_liter"]:
-        errors.append(f"solar_liter: expected {operation_payload['solar_liter']}, got {op.get('solar_liter')}")
-    
-    if op.get("catatan_operator") != operation_payload["catatan_operator"]:
-        errors.append(f"catatan_operator mismatch")
-    
-    if not op.get("kondisi_alat"):
-        errors.append("kondisi_alat missing")
-    else:
-        # Check kondisi_alat structure
-        ka = op["kondisi_alat"]
-        if ka.get("mesin", {}).get("status") != "baik":
-            errors.append("kondisi_alat.mesin.status incorrect")
-        if ka.get("ban_track", {}).get("status") != "tidak":
-            errors.append("kondisi_alat.ban_track.status incorrect")
-        if "Track aus" not in ka.get("ban_track", {}).get("keterangan", ""):
-            errors.append("kondisi_alat.ban_track.keterangan missing")
-    
-    if op.get("total_jam") != 8.0:
-        errors.append(f"total_jam: expected 8.0, got {op.get('total_jam')}")
-    
-    if errors:
-        print("✗ Operation field validation errors:")
-        for err in errors:
-            print(f"  - {err}")
-        return False
-    
-    print(f"✓ All new operation fields present and correct:")
-    print(f"  - Keterangan: {op['keterangan']}")
-    print(f"  - Downtime: {op['downtime_jam']} jam")
-    print(f"  - Solar: {op['solar_liter']} liter")
-    print(f"  - Catatan Operator: {op['catatan_operator'][:50]}...")
-    print(f"  - Kondisi Alat: {len(op['kondisi_alat'])} items checked")
-    print(f"  - Total Jam: {op['total_jam']} (auto-calculated)")
-    
-    return True
-
-
-def test_operations_patch():
-    """Test 3: PATCH operations (operator can patch own ops)"""
-    print("\n=== TEST 3: PATCH OPERATIONS ===")
-    
-    # Operator patches their own operation
-    patch_payload = {
-        "unit_id": test_data["unit_id"],
-        "tanggal": "2026-02-15",
-        "hour_meter_awal": 100.5,
-        "hour_meter_akhir": 110.0,  # Changed from 108.5
-        "jumlah_cars": 15,  # Changed from 12
-        "pengurus": "Pak Tono",
-        "keterangan": "Galian saluran, hujan 2 jam",  # Changed
-        "downtime_jam": 2.0,  # Changed from 1.5
-        "solar_liter": 50.0,  # Changed from 45.0
-        "catatan_operator": "Track aus, sudah diganti. Aki baru dipasang.",  # Changed
-        "kondisi_alat": {
-            "mesin": {"status": "baik", "keterangan": ""},
-            "sistem_hidrolik": {"status": "baik", "keterangan": ""},
-            "ban_track": {"status": "baik", "keterangan": "Track baru"},
-            "lampu": {"status": "baik", "keterangan": ""},
-            "rem": {"status": "baik", "keterangan": ""},
-            "kelistrikan": {"status": "baik", "keterangan": "Aki baru"}
-        }
-    }
-    
-    response = operator_session.patch(f"{BASE_URL}/operations/{test_data['operation_id']}", json=patch_payload)
-    if response.status_code != 200:
-        print(f"✗ Failed to patch operation: {response.status_code} {response.text}")
-        return False
-    
-    updated_op = response.json()
-    
-    # Verify updates
-    errors = []
-    
-    if updated_op.get("hour_meter_akhir") != 110.0:
-        errors.append(f"hour_meter_akhir not updated")
-    
-    if updated_op.get("jumlah_cars") != 15:
-        errors.append(f"jumlah_cars not updated")
-    
-    if updated_op.get("downtime_jam") != 2.0:
-        errors.append(f"downtime_jam not updated")
-    
-    if updated_op.get("solar_liter") != 50.0:
-        errors.append(f"solar_liter not updated")
-    
-    # Check total_jam recalculated
-    expected_total = 110.0 - 100.5  # 9.5
-    if updated_op.get("total_jam") != expected_total:
-        errors.append(f"total_jam not recalculated: expected {expected_total}, got {updated_op.get('total_jam')}")
-    
-    # Check kondisi_alat updated
-    if updated_op.get("kondisi_alat", {}).get("ban_track", {}).get("status") != "baik":
-        errors.append("kondisi_alat.ban_track not updated")
-    
-    if errors:
-        print("✗ PATCH operation validation errors:")
-        for err in errors:
-            print(f"  - {err}")
-        return False
-    
-    print(f"✓ PATCH operation successful:")
-    print(f"  - HM Akhir: 108.5 → 110.0")
-    print(f"  - Cars: 12 → 15")
-    print(f"  - Downtime: 1.5 → 2.0 jam")
-    print(f"  - Solar: 45.0 → 50.0 liter")
-    print(f"  - Total Jam recalculated: {updated_op['total_jam']} jam")
-    print(f"  - Kondisi ban_track: tidak → baik")
-    
-    # Test admin can also patch
-    admin_patch = {
-        **patch_payload,
-        "keterangan": "Admin edit: Galian selesai"
-    }
-    
-    response = admin_session.patch(f"{BASE_URL}/operations/{test_data['operation_id']}", json=admin_patch)
-    if response.status_code != 200:
-        print(f"✗ Admin failed to patch operation: {response.status_code}")
-        return False
-    
-    print(f"✓ Admin can also PATCH operations")
-    
-    return True
-
-
-def test_reports_extras():
-    """Test 4: Reports extras API (admin only)"""
-    print("\n=== TEST 4: REPORTS EXTRAS (ADMIN ONLY) ===")
-    
-    # GET extras (should return defaults)
-    response = admin_session.get(f"{BASE_URL}/reports/extras", params={
-        "unit_id": test_data["unit_id"],
-        "periode": "2026-02"
-    })
-    
-    if response.status_code != 200:
-        print(f"✗ Failed to get extras: {response.status_code} {response.text}")
-        return False
-    
-    extras = response.json()
-    print(f"✓ GET /reports/extras successful (defaults)")
-    
-    # PUT extras (admin only)
-    extras_payload = {
-        "unit_id": test_data["unit_id"],
-        "periode": "2026-02",
-        "pengembalian_jam": 500000,
-        "lain_lain": 250000,
-        "keterangan_tambahan": "Hujan 2 hari, unit standby menunggu material"
-    }
-    
-    response = admin_session.put(f"{BASE_URL}/reports/extras", json=extras_payload)
-    if response.status_code != 200:
-        print(f"✗ Failed to put extras: {response.status_code} {response.text}")
-        return False
-    
-    saved_extras = response.json()
-    print(f"✓ PUT /reports/extras successful")
-    
-    # Verify saved data
-    errors = []
-    
-    if saved_extras.get("pengembalian_jam") != 500000:
-        errors.append(f"pengembalian_jam not saved")
-    
-    if saved_extras.get("lain_lain") != 250000:
-        errors.append(f"lain_lain not saved")
-    
-    if saved_extras.get("keterangan_tambahan") != extras_payload["keterangan_tambahan"]:
-        errors.append(f"keterangan_tambahan not saved")
-    
-    if errors:
-        print("✗ Extras validation errors:")
-        for err in errors:
-            print(f"  - {err}")
-        return False
-    
-    print(f"✓ Extras saved correctly:")
-    print(f"  - Pengembalian Jam: Rp{saved_extras['pengembalian_jam']:,}")
-    print(f"  - Lain-lain: Rp{saved_extras['lain_lain']:,}")
-    print(f"  - Keterangan: {saved_extras['keterangan_tambahan'][:50]}...")
-    
-    # Test operator cannot PUT extras
-    response = operator_session.put(f"{BASE_URL}/reports/extras", json=extras_payload)
-    if response.status_code != 403:
-        print(f"✗ Operator should be blocked from PUT /reports/extras, got {response.status_code}")
-        return False
-    
-    print(f"✓ Operator blocked from PUT /reports/extras (403)")
-    
-    return True
-
-
-def test_reports_units():
-    """Test 5: Reports units API with all new fields"""
-    print("\n=== TEST 5: REPORTS UNITS WITH NEW FIELDS ===")
-    
-    # GET reports for periode
-    response = admin_session.get(f"{BASE_URL}/reports/units", params={"periode": "2026-02"})
-    if response.status_code != 200:
-        print(f"✗ Failed to get reports: {response.status_code} {response.text}")
-        return False
-    
-    reports = response.json()
-    
-    # Find our test unit
-    unit_report = None
-    for r in reports:
-        if r["unit_id"] == test_data["unit_id"]:
-            unit_report = r
-            break
-    
-    if not unit_report:
-        print(f"✗ Test unit not found in reports")
-        return False
-    
-    print(f"✓ Found unit report: {unit_report['unit_label']}")
-    
-    # Verify all new fields are present
-    errors = []
-    
-    # Unit fields
-    expected_unit_fields = ["merek_type", "pemilik_alat", "nama_proyek", "lokasi_proyek", "pengawas_lapangan"]
-    for field in expected_unit_fields:
-        if field not in unit_report:
-            errors.append(f"Missing unit field: {field}")
-    
-    # Aggregated operation fields
-    if "total_downtime" not in unit_report:
-        errors.append("Missing total_downtime")
-    elif unit_report["total_downtime"] != 2.0:
-        errors.append(f"total_downtime: expected 2.0, got {unit_report['total_downtime']}")
-    
-    if "total_solar" not in unit_report:
-        errors.append("Missing total_solar")
-    elif unit_report["total_solar"] != 50.0:
-        errors.append(f"total_solar: expected 50.0, got {unit_report['total_solar']}")
-    
-    if "hari_operasional" not in unit_report:
-        errors.append("Missing hari_operasional")
-    elif unit_report["hari_operasional"] != 1:
-        errors.append(f"hari_operasional: expected 1, got {unit_report['hari_operasional']}")
-    
-    if "kondisi_alat" not in unit_report:
-        errors.append("Missing kondisi_alat")
-    else:
-        # Check kondisi_alat structure (latest from operations)
-        ka = unit_report["kondisi_alat"]
-        if "mesin" not in ka or "ban_track" not in ka:
-            errors.append("kondisi_alat missing items")
-    
-    if "catatan_operator" not in unit_report:
-        errors.append("Missing catatan_operator")
-    elif not isinstance(unit_report["catatan_operator"], list):
-        errors.append("catatan_operator should be a list")
-    
-    # Extras fields
-    if "pengembalian_jam" not in unit_report:
-        errors.append("Missing pengembalian_jam")
-    elif unit_report["pengembalian_jam"] != 500000:
-        errors.append(f"pengembalian_jam: expected 500000, got {unit_report['pengembalian_jam']}")
-    
-    if "lain_lain" not in unit_report:
-        errors.append("Missing lain_lain")
-    elif unit_report["lain_lain"] != 250000:
-        errors.append(f"lain_lain: expected 250000, got {unit_report['lain_lain']}")
-    
-    if "keterangan_tambahan" not in unit_report:
-        errors.append("Missing keterangan_tambahan")
-    
-    if errors:
-        print("✗ Report validation errors:")
-        for err in errors:
-            print(f"  - {err}")
-        return False
-    
-    print(f"✓ All new report fields present and correct:")
-    print(f"  - Merek/Type: {unit_report['merek_type']}")
-    print(f"  - Nama Proyek: {unit_report['nama_proyek']}")
-    print(f"  - Lokasi Proyek: {unit_report['lokasi_proyek']}")
-    print(f"  - Pengawas Lapangan: {unit_report['pengawas_lapangan']}")
-    print(f"  - Total Downtime: {unit_report['total_downtime']} jam")
-    print(f"  - Total Solar: {unit_report['total_solar']} liter")
-    print(f"  - Hari Operasional: {unit_report['hari_operasional']} hari")
-    print(f"  - Kondisi Alat: {len(unit_report['kondisi_alat'])} items")
-    print(f"  - Catatan Operator: {len(unit_report['catatan_operator'])} entries")
-    print(f"  - Pengembalian Jam: Rp{unit_report['pengembalian_jam']:,}")
-    print(f"  - Lain-lain: Rp{unit_report['lain_lain']:,}")
-    print(f"  - Keterangan Tambahan: {unit_report['keterangan_tambahan'][:50]}...")
-    
-    return True
-
-
-def cleanup():
-    """Cleanup test data"""
-    print("\n=== CLEANUP TEST DATA ===")
-    
-    try:
-        # Delete operation
-        if "operation_id" in test_data:
-            response = admin_session.delete(f"{BASE_URL}/operations/{test_data['operation_id']}")
-            if response.status_code == 200:
-                print(f"✓ Deleted test operation")
+    def test(self, name, method, endpoint, expected_status, data=None, headers=None, params=None, check_fn=None):
+        """Run a single API test."""
+        url = f"{BASE_URL}{endpoint}"
+        self.tests_run += 1
         
-        # Delete unit
-        if "unit_id" in test_data:
-            response = admin_session.delete(f"{BASE_URL}/units/{test_data['unit_id']}")
-            if response.status_code == 200:
-                print(f"✓ Deleted test unit")
+        print(f"\n{Colors.BLUE}🔍 Test {self.tests_run}: {name}{Colors.END}")
         
-        print(f"✓ Cleanup complete")
-        return True
-    except Exception as e:
-        print(f"⚠️  Cleanup error (non-critical): {e}")
-        return True
+        try:
+            h = headers or {}
+            if method == 'GET':
+                response = self.session.get(url, headers=h, params=params)
+            elif method == 'POST':
+                response = self.session.post(url, json=data, headers=h, params=params)
+            elif method == 'PUT':
+                response = self.session.put(url, json=data, headers=h)
+            elif method == 'PATCH':
+                response = self.session.patch(url, json=data, headers=h)
+            elif method == 'DELETE':
+                response = self.session.delete(url, headers=h)
+            else:
+                raise ValueError(f"Unsupported method: {method}")
 
+            status_ok = response.status_code == expected_status
+            check_ok = True
+            check_msg = ""
+            
+            if check_fn and status_ok:
+                try:
+                    body = response.json() if response.content else {}
+                    check_ok, check_msg = check_fn(body)
+                except Exception as e:
+                    check_ok = False
+                    check_msg = f"Check function error: {str(e)}"
 
-def main():
-    global admin_session, operator_session
-    
-    print("=" * 70)
-    print("TRIRARA TUNGGAL PUTRA - Hour Meter Backend API Test Suite")
-    print("=" * 70)
-    
-    try:
-        # Login as admin
-        admin_session, admin_user = login(ADMIN_CREDS["username"], ADMIN_CREDS["password"])
+            success = status_ok and check_ok
+            
+            if success:
+                self.tests_passed += 1
+                print(f"{Colors.GREEN}✅ PASSED - Status: {response.status_code}{Colors.END}")
+                if check_msg:
+                    print(f"   {check_msg}")
+            else:
+                self.tests_failed += 1
+                print(f"{Colors.RED}❌ FAILED{Colors.END}")
+                if not status_ok:
+                    print(f"   Expected status {expected_status}, got {response.status_code}")
+                if not check_ok:
+                    print(f"   {check_msg}")
+                try:
+                    print(f"   Response: {response.text[:300]}")
+                except:
+                    pass
+
+            return success, response
+
+        except Exception as e:
+            self.tests_failed += 1
+            print(f"{Colors.RED}❌ FAILED - Error: {str(e)}{Colors.END}")
+            return False, None
+
+    def login(self, username, password):
+        """Login and store session cookie."""
+        success, response = self.test(
+            f"Login as {username}",
+            "POST",
+            "/api/auth/login",
+            200,
+            data={"username": username, "password": password}
+        )
+        return success
+
+    def test_wa_connection(self):
+        """Test GET /api/wa/connection endpoint."""
+        def check(body):
+            if body.get("level") != "not_configured":
+                return False, f"Expected level 'not_configured', got '{body.get('level')}'"
+            if not body.get("missing"):
+                return False, "Expected 'missing' list to be non-empty"
+            # Check that no secrets are exposed
+            body_str = json.dumps(body)
+            if "EAA" in body_str or "token" in body_str.lower():
+                return False, "Response may contain token values"
+            return True, f"Level: {body.get('level')}, Missing: {len(body.get('missing', []))} items"
+        
+        return self.test(
+            "GET /api/wa/connection (not configured)",
+            "GET",
+            "/api/wa/connection",
+            200,
+            check_fn=check
+        )
+
+    def test_wa_status(self):
+        """Test GET /api/wa/status endpoint."""
+        def check(body):
+            if body.get("configured") != False:
+                return False, "Expected configured=false"
+            conn = body.get("connection", {})
+            if conn.get("level") != "not_configured":
+                return False, f"Expected connection level 'not_configured', got '{conn.get('level')}'"
+            return True, f"Configured: {body.get('configured')}, Connection: {conn.get('level')}"
+        
+        return self.test(
+            "GET /api/wa/status (not configured)",
+            "GET",
+            "/api/wa/status",
+            200,
+            check_fn=check
+        )
+
+    def test_wa_cloud_check_unconfigured(self):
+        """Test POST /api/wa/cloud/check when not configured."""
+        def check(body):
+            if "Kredensial WhatsApp belum lengkap" not in body.get("detail", ""):
+                return False, f"Expected error message about missing credentials, got: {body.get('detail')}"
+            return True, "Correctly returns 400 when not configured"
+        
+        return self.test(
+            "POST /api/wa/cloud/check (not configured)",
+            "POST",
+            "/api/wa/cloud/check",
+            400,
+            check_fn=check
+        )
+
+    def test_wa_cloud_send_test_unconfigured(self):
+        """Test POST /api/wa/cloud/send-test when not configured."""
+        def check(body):
+            if "Kredensial WhatsApp belum lengkap" not in body.get("detail", ""):
+                return False, f"Expected error message about missing credentials"
+            return True, "Correctly returns 400 when not configured"
+        
+        return self.test(
+            "POST /api/wa/cloud/send-test (not configured)",
+            "POST",
+            "/api/wa/cloud/send-test",
+            400,
+            data={"to": "628123456789", "mode": "text", "text": "Test"},
+            check_fn=check
+        )
+
+    def test_wa_cloud_register_unconfigured(self):
+        """Test POST /api/wa/cloud/register when not configured."""
+        def check(body):
+            if "Kredensial WhatsApp belum lengkap" not in body.get("detail", ""):
+                return False, "Expected error message about missing credentials"
+            return True, "Correctly returns 400 when not configured"
+        
+        return self.test(
+            "POST /api/wa/cloud/register (not configured)",
+            "POST",
+            "/api/wa/cloud/register",
+            400,
+            data={"pin": "123456"},
+            check_fn=check
+        )
+
+    def test_wa_cloud_register_invalid_pin(self):
+        """Test POST /api/wa/cloud/register with invalid PIN."""
+        def check(body):
+            if "PIN harus 6 digit angka" not in body.get("detail", ""):
+                return False, "Expected error about 6-digit PIN"
+            return True, "Correctly validates PIN format"
+        
+        # Test with non-6-digit PIN
+        self.test(
+            "POST /api/wa/cloud/register (invalid PIN - 5 digits)",
+            "POST",
+            "/api/wa/cloud/register",
+            400,
+            data={"pin": "12345"},
+            check_fn=check
+        )
+        
+        # Test with non-numeric PIN
+        return self.test(
+            "POST /api/wa/cloud/register (invalid PIN - non-numeric)",
+            "POST",
+            "/api/wa/cloud/register",
+            400,
+            data={"pin": "12345a"},
+            check_fn=check
+        )
+
+    def test_wa_cloud_subscribe_unconfigured(self):
+        """Test POST /api/wa/cloud/subscribe when not configured."""
+        def check(body):
+            if "Kredensial WhatsApp belum lengkap" not in body.get("detail", ""):
+                return False, "Expected error message about missing credentials"
+            return True, "Correctly returns 400 when not configured"
+        
+        return self.test(
+            "POST /api/wa/cloud/subscribe (not configured)",
+            "POST",
+            "/api/wa/cloud/subscribe",
+            400,
+            check_fn=check
+        )
+
+    def test_wa_outbox(self):
+        """Test GET /api/wa/outbox endpoint."""
+        def check(body):
+            if "items" not in body or "counts" not in body:
+                return False, "Expected 'items' and 'counts' in response"
+            if not isinstance(body["items"], list):
+                return False, "'items' should be a list"
+            if not isinstance(body["counts"], dict):
+                return False, "'counts' should be a dict"
+            # Check for token leakage in outbox items
+            body_str = json.dumps(body)
+            if "EAA" in body_str:
+                return False, "Outbox response may contain token values"
+            return True, f"Items: {len(body['items'])}, Counts: {body['counts']}"
+        
+        return self.test(
+            "GET /api/wa/outbox",
+            "GET",
+            "/api/wa/outbox",
+            200,
+            check_fn=check
+        )
+
+    def test_wa_outbox_retry_invalid(self):
+        """Test POST /api/wa/outbox/{id}/retry with invalid ID."""
+        def check(body):
+            # Should return error for non-existent or non-failed message
+            return True, f"Response: {body.get('detail', body)}"
+        
+        return self.test(
+            "POST /api/wa/outbox/{id}/retry (invalid ID)",
+            "POST",
+            "/api/wa/outbox/nonexistent-id/retry",
+            400,
+            check_fn=check
+        )
+
+    def test_cron_wa_outbox_retry_no_auth(self):
+        """Test POST /api/cron/wa-outbox-retry without auth."""
+        return self.test(
+            "POST /api/cron/wa-outbox-retry (no auth)",
+            "POST",
+            "/api/cron/wa-outbox-retry",
+            401
+        )
+
+    def test_cron_wa_outbox_retry_wrong_auth(self):
+        """Test POST /api/cron/wa-outbox-retry with wrong auth."""
+        return self.test(
+            "POST /api/cron/wa-outbox-retry (wrong auth)",
+            "POST",
+            "/api/cron/wa-outbox-retry",
+            401,
+            headers={"Authorization": "Bearer wrong-secret"}
+        )
+
+    def test_cron_wa_outbox_retry_valid(self):
+        """Test POST /api/cron/wa-outbox-retry with valid auth."""
+        # Read the secret from .env
+        try:
+            with open("/app/backend/.env") as f:
+                for line in f:
+                    if line.startswith("WEBHOOK_CRON_SECRET="):
+                        secret = line.split("=", 1)[1].strip()
+                        break
+        except:
+            print(f"{Colors.YELLOW}⚠️  Could not read WEBHOOK_CRON_SECRET from .env{Colors.END}")
+            return False, None
+        
+        def check(body):
+            if body.get("status") not in ("accepted", "duplicate"):
+                return False, f"Expected status 'accepted' or 'duplicate', got '{body.get('status')}'"
+            return True, f"Status: {body.get('status')}"
+        
+        return self.test(
+            "POST /api/cron/wa-outbox-retry (valid auth)",
+            "POST",
+            "/api/cron/wa-outbox-retry",
+            200,
+            headers={"Authorization": f"Bearer {secret}"},
+            data={},
+            check_fn=check
+        )
+
+    def test_cron_wa_outbox_retry_duplicate(self):
+        """Test POST /api/cron/wa-outbox-retry with same X-Webhook-Id."""
+        try:
+            with open("/app/backend/.env") as f:
+                for line in f:
+                    if line.startswith("WEBHOOK_CRON_SECRET="):
+                        secret = line.split("=", 1)[1].strip()
+                        break
+        except:
+            return False, None
+        
+        webhook_id = f"test-{int(datetime.now().timestamp())}"
+        
+        # First call
+        self.test(
+            "POST /api/cron/wa-outbox-retry (first call)",
+            "POST",
+            "/api/cron/wa-outbox-retry",
+            200,
+            headers={"Authorization": f"Bearer {secret}", "X-Webhook-Id": webhook_id},
+            data={}
+        )
+        
+        # Second call with same webhook_id should return duplicate
+        def check(body):
+            if body.get("status") != "duplicate":
+                return False, f"Expected status 'duplicate', got '{body.get('status')}'"
+            return True, "Correctly detects duplicate webhook ID"
+        
+        return self.test(
+            "POST /api/cron/wa-outbox-retry (duplicate webhook ID)",
+            "POST",
+            "/api/cron/wa-outbox-retry",
+            200,
+            headers={"Authorization": f"Bearer {secret}", "X-Webhook-Id": webhook_id},
+            data={},
+            check_fn=check
+        )
+
+    def test_cron_wa_outbox_retry_invalid_body(self):
+        """Test POST /api/cron/wa-outbox-retry with invalid JSON body."""
+        try:
+            with open("/app/backend/.env") as f:
+                for line in f:
+                    if line.startswith("WEBHOOK_CRON_SECRET="):
+                        secret = line.split("=", 1)[1].strip()
+                        break
+        except:
+            return False, None
+        
+        # Send non-object JSON (array instead of object)
+        import requests
+        url = f"{BASE_URL}/api/cron/wa-outbox-retry"
+        response = requests.post(url, json=["not", "an", "object"], headers={"Authorization": f"Bearer {secret}"})
+        
+        self.tests_run += 1
+        if response.status_code == 400:
+            self.tests_passed += 1
+            print(f"\n{Colors.BLUE}🔍 Test {self.tests_run}: POST /api/cron/wa-outbox-retry (invalid body){Colors.END}")
+            print(f"{Colors.GREEN}✅ PASSED - Status: {response.status_code}{Colors.END}")
+            return True, response
+        else:
+            self.tests_failed += 1
+            print(f"\n{Colors.BLUE}🔍 Test {self.tests_run}: POST /api/cron/wa-outbox-retry (invalid body){Colors.END}")
+            print(f"{Colors.RED}❌ FAILED - Expected 400, got {response.status_code}{Colors.END}")
+            return False, response
+
+    def test_wa_summary_preview(self):
+        """Test GET /api/wa/summary/preview."""
+        def check(body):
+            if "tanggal" not in body or "items" not in body:
+                return False, "Expected 'tanggal' and 'items' in response"
+            if not isinstance(body["items"], list):
+                return False, "'items' should be a list"
+            return True, f"Tanggal: {body.get('tanggal')}, Items: {len(body['items'])}"
+        
+        return self.test(
+            "GET /api/wa/summary/preview",
+            "GET",
+            "/api/wa/summary/preview",
+            200,
+            check_fn=check
+        )
+
+    def test_wa_summary_run(self):
+        """Test POST /api/wa/summary/run."""
+        def check(body):
+            if "run_id" not in body or "counts" not in body:
+                return False, "Expected 'run_id' and 'counts' in response"
+            counts = body.get("counts", {})
+            # In preview mode (not configured), should have 'preview' or 'skipped' counts
+            if not any(k in counts for k in ["preview", "skipped", "sent"]):
+                return False, "Expected counts to have 'preview', 'skipped', or 'sent'"
+            return True, f"Run ID: {body.get('run_id')}, Counts: {counts}"
+        
+        return self.test(
+            "POST /api/wa/summary/run",
+            "POST",
+            "/api/wa/summary/run",
+            200,
+            data={},
+            check_fn=check
+        )
+
+    def test_operator_access(self):
+        """Test that operator (budi) cannot access admin endpoints."""
+        # Logout admin
+        self.session = requests.Session()
         
         # Login as operator
-        operator_session, operator_user = login(OPERATOR_CREDS["username"], OPERATOR_CREDS["password"])
-        test_data["operator_user_id"] = operator_user["user_id"]
+        if not self.login("budi", "budi123"):
+            print(f"{Colors.YELLOW}⚠️  Could not login as operator{Colors.END}")
+            return False, None
         
-        # Run tests
-        results = {
-            "Units with New Fields": test_units_new_fields(),
-            "Operations with New Fields": test_operations_new_fields(),
-            "PATCH Operations": test_operations_patch(),
-            "Reports Extras (Admin Only)": test_reports_extras(),
-            "Reports Units with All Fields": test_reports_units()
-        }
+        # Try to access admin endpoint
+        def check(body):
+            # Should return 403 Forbidden
+            return True, "Operator correctly denied access"
         
-        # Cleanup
-        cleanup()
+        return self.test(
+            "GET /api/wa/connection (as operator - should fail)",
+            "GET",
+            "/api/wa/connection",
+            403,
+            check_fn=check
+        )
+
+    def test_unauthenticated_access(self):
+        """Test that unauthenticated users cannot access endpoints."""
+        # Logout
+        self.session = requests.Session()
         
-        # Summary
-        print("\n" + "=" * 70)
-        print("TEST SUMMARY")
-        print("=" * 70)
+        return self.test(
+            "GET /api/wa/connection (unauthenticated)",
+            "GET",
+            "/api/wa/connection",
+            401
+        )
+
+    def print_summary(self):
+        """Print test summary."""
+        print(f"\n{'='*60}")
+        print(f"{Colors.BLUE}📊 TEST SUMMARY{Colors.END}")
+        print(f"{'='*60}")
+        print(f"Total tests run: {self.tests_run}")
+        print(f"{Colors.GREEN}✅ Passed: {self.tests_passed}{Colors.END}")
+        print(f"{Colors.RED}❌ Failed: {self.tests_failed}{Colors.END}")
         
-        passed = sum(1 for v in results.values() if v)
-        total = len(results)
-        
-        for test_name, result in results.items():
-            status = "✅ PASS" if result else "❌ FAIL"
-            print(f"{status} - {test_name}")
-        
-        print(f"\nTotal: {passed}/{total} tests passed")
-        
-        if passed == total:
-            print("\n🎉 All backend tests passed!")
+        if self.tests_failed == 0:
+            print(f"\n{Colors.GREEN}🎉 All tests passed!{Colors.END}")
             return 0
         else:
-            print(f"\n⚠️  {total - passed} test(s) failed")
+            print(f"\n{Colors.RED}⚠️  Some tests failed{Colors.END}")
             return 1
-    
-    except Exception as e:
-        print(f"\n❌ Test suite error: {e}")
-        import traceback
-        traceback.print_exc()
-        return 1
 
+def main():
+    tester = APITester()
+    
+    print(f"{Colors.BLUE}{'='*60}{Colors.END}")
+    print(f"{Colors.BLUE}WhatsApp Cloud API Integration - Backend Tests{Colors.END}")
+    print(f"{Colors.BLUE}{'='*60}{Colors.END}")
+    print(f"Base URL: {BASE_URL}")
+    print(f"Testing preview mode (WhatsApp not configured)")
+    
+    # Login as admin
+    if not tester.login("admin", "admin123"):
+        print(f"{Colors.RED}❌ Failed to login as admin. Cannot continue.{Colors.END}")
+        return 1
+    
+    # Test connection endpoints
+    tester.test_wa_connection()
+    tester.test_wa_status()
+    
+    # Test cloud API endpoints (should fail when not configured)
+    tester.test_wa_cloud_check_unconfigured()
+    tester.test_wa_cloud_send_test_unconfigured()
+    tester.test_wa_cloud_register_unconfigured()
+    tester.test_wa_cloud_register_invalid_pin()
+    tester.test_wa_cloud_subscribe_unconfigured()
+    
+    # Test outbox endpoints
+    tester.test_wa_outbox()
+    tester.test_wa_outbox_retry_invalid()
+    
+    # Test cron endpoint
+    tester.test_cron_wa_outbox_retry_no_auth()
+    tester.test_cron_wa_outbox_retry_wrong_auth()
+    tester.test_cron_wa_outbox_retry_valid()
+    tester.test_cron_wa_outbox_retry_duplicate()
+    tester.test_cron_wa_outbox_retry_invalid_body()
+    
+    # Test daily summary endpoints
+    tester.test_wa_summary_preview()
+    tester.test_wa_summary_run()
+    
+    # Test access control
+    tester.test_operator_access()
+    tester.test_unauthenticated_access()
+    
+    return tester.print_summary()
 
 if __name__ == "__main__":
-    exit(main())
+    sys.exit(main())

@@ -22,7 +22,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from whatsapp import _env, _graph, norm_phone, wa_configured
+from wa_outbox import Outbox, _env, norm_phone, wa_configured
 
 log = logging.getLogger("daily_summary")
 TZ = ZoneInfo("Asia/Makassar")  # WITA
@@ -177,24 +177,9 @@ async def build_summaries(db, tanggal: str) -> list:
     return out
 
 
-async def _send(payload: dict) -> tuple[bool, str]:
-    try:
-        async with httpx.AsyncClient(timeout=30) as c:
-            r = await c.post(_graph(f"{_env('WHATSAPP_PHONE_NUMBER_ID')}/messages"),
-                             headers={"Authorization": f"Bearer {_env('WHATSAPP_ACCESS_TOKEN')}"}, json=payload)
-        if r.status_code < 300:
-            return True, ""
-        try:
-            err = (r.json().get("error") or {}).get("message", "")
-        except Exception:
-            err = ""
-        return False, f"HTTP {r.status_code} {err}"[:300]
-    except Exception as e:  # noqa: BLE001 — jangan log token
-        return False, type(e).__name__
-
-
 def build_summary_router(db, require_admin: Callable, audit_fn: Optional[Callable] = None) -> APIRouter:
     r = APIRouter()
+    outbox = Outbox(db)
 
     async def get_cfg():
         doc = await db.app_settings.find_one({"key": "wa_summary"}, {"_id": 0}) or {}
@@ -228,19 +213,30 @@ def build_summary_router(db, require_admin: Callable, audit_fn: Optional[Callabl
             else:
                 last = await db.wa_last_inbound.find_one({"phone": norm_phone(s_["phone"])}, {"_id": 0})
                 in_window = bool(last) and datetime.fromisoformat(last["at"]) > datetime.now(timezone.utc) - timedelta(hours=24)
+                key = f"summary:{tanggal}:{norm_phone(s_['phone'])}" + (f":{run_id}" if force else "")
+                label = f"Ringkasan harian {s_['pengurus']} {tanggal}"
+                ob = None
                 if in_window:
                     mode = "text"
-                    ok, err = await _send({"messaging_product": "whatsapp", "recipient_type": "individual", "to": s_["phone"],
-                                           "type": "text", "text": {"preview_url": False, "body": s_["text"][:4096]}})
+                    ob = await outbox.send(s_["phone"], {"type": "text", "text": {"preview_url": False, "body": s_["text"][:4096]}},
+                                           "daily_summary", key, actor=actor, ref={"summary_id": base["id"]}, label=label)
                 elif cfg["template_name"]:
                     mode = "template"
-                    ok, err = await _send({"messaging_product": "whatsapp", "to": s_["phone"], "type": "template", "template": {
+                    ob = await outbox.send(s_["phone"], {"type": "template", "template": {
                         "name": cfg["template_name"], "language": {"code": cfg["template_lang"] or "id"},
-                        "components": [{"type": "body", "parameters": [{"type": "text", "text": p} for p in s_["params"]]}]}})
+                        "components": [{"type": "body", "parameters": [{"type": "text", "text": p} for p in s_["params"]]}]}},
+                        "daily_summary", key, actor=actor, ref={"summary_id": base["id"]}, label=label)
                 else:
-                    ok, err = False, "Di luar jendela 24 jam & template Utility belum diatur"
-                    mode = "none"
-                status = "sent" if ok else ("skipped" if mode == "none" else "failed")
+                    err, mode = "Di luar jendela 24 jam & template Utility belum diatur", "none"
+                if ob is None:
+                    status = "skipped"
+                elif ob.get("deduped"):
+                    status, err = "skipped", f"Tidak dikirim ulang (pesan sebelumnya: {ob.get('status')})"
+                elif ob.get("status") in ("sent", "delivered", "read"):
+                    status, err = "sent", ""
+                else:
+                    status, err = "failed", ob.get("error", "") + (" · dijadwalkan ulang otomatis" if ob.get("retriable") else "")
+                base["outbox_id"] = (ob or {}).get("id", "")
             doc = {**base, "status": status, "mode": mode, "error": err}
             await db.wa_summaries.insert_one(doc)
             doc.pop("_id", None)

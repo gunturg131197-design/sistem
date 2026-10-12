@@ -75,3 +75,10 @@ Aplikasi sistem pelaporan untuk alat berat excavator. Fields: unit excavator, no
 - Auto-approve >= 90% confidence + cek unit, no_ref duplikat, peringatan; audit log lengkap
 - Ringkasan harian 20:00 WITA per pengurus: HM per unit, transfer hari ini, total diterima, piutang berjalan bulan ini, verifikasi tertunda
 - Pengiriman WA DISIMULASIKAN sampai kredensial Meta diisi (pasca-deploy)
+
+## Phase 8 — WA Cloud API production hardening (COMPLETED, iteration_7)
+- wa_outbox.py: semua pesan keluar via outbox (dedupe_key unik, retry aman 429/5xx/koneksi, timeout=tidak pasti tanpa auto-retry, redaksi token, status delivered/read/failed dari webhook)
+- Status koneksi bertingkat; "Terhubung · Terverifikasi" hanya setelah pesan masuk asli + pesan keluar delivered
+- Endpoint: /api/wa/connection, /api/wa/cloud/{check,send-test,register,subscribe}, /api/wa/outbox(+retry), cron /api/cron/wa-outbox-retry (*/30)
+- UI: tab Koneksi WhatsApp (checklist, alat uji, panduan 8 langkah), tab Pesan Keluar; halaman publik /kebijakan-privasi
+- Panduan: /app/memory/PANDUAN_WHATSAPP.md. User: Business Portfolio belum ada; nomor masih aktif di app WA (harus dihapus akun / nomor baru); nomor pemilik 6282343070023
