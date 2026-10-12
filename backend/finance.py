@@ -8,7 +8,7 @@ from typing import Optional, Callable
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from pymongo import ReturnDocument
+from mariadb_store import ReturnDocument
 
 ROMAN = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]
 BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]

@@ -87,3 +87,14 @@ Aplikasi sistem pelaporan untuk alat berat excavator. Fields: unit excavator, no
 - Menu "Bonus Admin" (/bonus-admin, admin only): tiap unit mencapai kelipatan 300 jam kerja (total_jam Ops Report) → bonus Rp500.000 ke admin unit; sisa jam dibawa ke bonus berikutnya.
 - Backend backend/bonus.py: GET /api/bonus-admin?year=, GET/PUT /api/bonus-admin/settings (enabled, jam_per_bonus, nominal, default_admin, start_date, unit_admins), POST /api/bonus-admin/pay (→ Kas Keluar KK-TTP otomatis, source=bonus_admin), DELETE /api/bonus-admin/pay/{id} (hapus KK), GET /api/bonus-admin/history (audit). Unique index cegah bayar ganda.
 - UI: stat cards, progress bar ke bonus berikutnya, filter (Belum Dibayar / Hampir Tercapai), rincian per kelipatan + Tandai Dibayar / Batalkan, Pengaturan, Riwayat, export PDF berkop & Excel.
+
+## Update — Migrasi Database MongoDB → MariaDB (2026-10)
+- User choices: MariaDB di Coolify (service compose), migrasi data lama, tabel relasional penuh (kolom per field), deploy hanya Coolify, backup tetap JSON.
+- backend/db_schema.py: 28 tabel (kolom bertipe: VARCHAR/DATE/DOUBLE/BIGINT/BOOLEAN/JSON/LONGBLOB, unique & index). Kolom `_extra` JSON = penampung field baru/nilai tak cocok tipe (tanpa kehilangan data). Kolom baru otomatis ALTER TABLE + backfill.
+- backend/mariadb_store.py: lapisan akses data async (SQLAlchemy 2 + asyncmy). API find/find_one/insert/update/upsert/find_one_and_update/delete/count/distinct; filter → WHERE SQL + verifikasi Python; update dalam transaksi SELECT…FOR UPDATE (READ COMMITTED) → penomoran bukti & lock cron atomik; DuplicateKeyError; None vs field-tidak-ada dipertahankan.
+- tests/test_store_parity.py: 27 uji paritas Mongo vs MariaDB (termasuk 40 increment paralel & 20 lock paralel) — LULUS. Test suite lama: hasil identik dengan baseline Mongo.
+- Migrasi: backend/scripts/migrate_mongo_to_mariadb.py (CLI, merge/replace/dry-run, verifikasi jumlah) + otomatis saat startup bila MIGRATE_FROM_MONGO_URL & MIGRATE_FROM_MONGO_DB di-set (dijalankan sebelum bootstrap admin/backfill; status di app_settings 'mongo_migration' + panel Backup).
+- backup_db.py / restore_db.py (backend/scripts, wrapper di /app/scripts) memakai MariaDB; format trirara-backup-v1 (backup lama Mongo bisa direstore).
+- docker-compose(.singledomain).yml: service mariadb:11.4 (volume mariadb_data) + mongo lama (volume mongo_data, hanya sumber migrasi). mariadb/docker-compose.yml standalone. DEPLOY_COOLIFY.md ditulis ulang.
+- requirements.txt: + SQLAlchemy[asyncio], asyncmy, greenlet, Pillow (bug lama: PIL di-import tanpa terdaftar); − motor. pymongo tetap (bson + migrasi).
+- Preview Emergent: MariaDB lokal via scripts/preview_mariadb.sh (data di /app/.mariadb_data), auto-start oleh backend bila PREVIEW_MARIADB_AUTOSTART=1.

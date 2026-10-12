@@ -1,221 +1,129 @@
-# Deploy EXCAVA.OPS di Coolify v4 (>= 4.3.14) — Dua Subdomain
+# Deploy TRIRARA / EXCAVA.OPS di Coolify v4 (>= 4.3.14) — Database MariaDB
 
-Arsitektur: **Frontend** dan **Backend** di-deploy sebagai **dua Application terpisah** (berbasis Dockerfile),
-plus **MongoDB** (disarankan MongoDB Atlas / atau container Mongo tersendiri).
+Arsitektur:
 
 ```
-Frontend : https://sistem.domainanda.com        (React + nginx, port 80)
-Backend  : https://api.sistem.domainanda.com     (FastAPI/uvicorn, port 8000)
-Database : MongoDB Atlas (mongodb+srv://...)      atau Mongo container
+Frontend : React + nginx (port 80)
+Backend  : FastAPI/uvicorn (port 8000)
+Database : MariaDB 11.4 (tabel relasional, satu kolom per field — skema di backend/db_schema.py)
 ```
 
-> Keduanya berada di bawah satu domain induk (`domainanda.com`) sehingga cookie login
-> (`SameSite=None; Secure`) tetap valid antar-subdomain. HTTPS wajib (Coolify menyediakan via Let's Encrypt).
+Tabel & kolom dibuat **otomatis** oleh backend saat start (tidak perlu import SQL manual).
+Struktur bisa dibuka dengan phpMyAdmin / DBeaver / HeidiSQL untuk laporan SQL.
+
+> Cookie login (`SameSite=None; Secure`) butuh HTTPS. Coolify menyediakan HTTPS via Let's Encrypt.
 
 ---
 
-## A. Deploy BACKEND (FastAPI)
+## 1. Pilih cara deploy
 
-1. Coolify → **+ New Resource → Application → Dockerfile / Git**.
-2. Pilih repo Anda.
-3. **Base Directory**: `/backend`. **Dockerfile**: `/Dockerfile` (relatif thd Base Directory → `/backend/Dockerfile`).
-4. **Port**: `8000` (sesuai `EXPOSE 8000` di Dockerfile).
-5. **Domain**: `https://api.sistem.domainanda.com`.
-6. **Environment Variables** (JANGAN commit ke GitHub):
-   ```
-   MONGO_URL=mongodb+srv://USERNAME:PASSWORD@CLUSTER.mongodb.net/?retryWrites=true&w=majority
-   DB_NAME=ttp_ops
-   CORS_ORIGINS=https://sistem.domainanda.com
+| Opsi | File | Domain | Cocok bila |
+|---|---|---|---|
+| **F – Satu domain (DISARANKAN)** | `docker-compose.singledomain.yml` | 1 domain (`/api` di-proxy nginx) | Paling sederhana, tanpa CORS |
+| **E – Gabungan 2 subdomain** | `docker-compose.yml` | frontend + `api.` subdomain | Ingin subdomain API terpisah |
+| **B – App terpisah** | `backend/Dockerfile`, `Dockerfile` (frontend), `mariadb/docker-compose.yml` | bebas | Resource terpisah per service |
 
-   # Bootstrap admin pertama (DB kosong) — GANTI passwordnya!
-   ADMIN_USERNAME=admin
-   ADMIN_PASSWORD=ganti_password_kuat
-   ADMIN_NAME=Administrator
-   # Opsional: email Google yang otomatis jadi admin (pisah koma)
-   ADMIN_EMAILS=
-   ```
-   > **PENTING**: `CORS_ORIGINS` harus **persis** origin frontend (bukan `*`), karena login memakai
-   > cookie berkredensial. Kalau salah, login akan gagal (CORS blok).
-7. **Start Command**: kosongkan (CMD sudah ada di Dockerfile). Jangan pakai `npm start`/lainnya.
-8. Deploy.
-
-Cek sehat: buka `https://api.sistem.domainanda.com/docs` → harus muncul Swagger UI.
+Pada opsi E & F, MariaDB berjalan sebagai service internal `mariadb` (tanpa domain).
 
 ---
 
-## B. Deploy FRONTEND (React + nginx)
+## 2. Environment Variables (Coolify → resource → Environment Variables)
 
-1. **Edit `frontend/.env.production`** → ganti nilai `REACT_APP_BACKEND_URL` ke subdomain backend Anda
-   (TANPA `/api` di akhir), lalu commit:
-   ```
-   REACT_APP_BACKEND_URL=https://api.sistem.domainanda.com
-   ```
-   Kode `src/lib/api.js` menambahkan `/api` otomatis → `https://api.sistem.domainanda.com/api`.
-2. Coolify → **+ New Resource → Application → Dockerfile / Git** (repo yang sama).
-3. **Base Directory**: `/frontend`. **Dockerfile**: `/Dockerfile` (→ `/frontend/Dockerfile`).
-4. **Port**: `80`.
-5. **Domain**: `https://sistem.domainanda.com`.
-6. **Start Command**: kosongkan (Dockerfile sudah `CMD ["nginx","-g","daemon off;"]`). Hapus `npm start`.
-7. Deploy.
-
----
-
-## C. Login pertama
-
-Buka `https://sistem.domainanda.com/login` → tab **Username/Password** →
-masuk dengan `ADMIN_USERNAME` / `ADMIN_PASSWORD` yang di-set di backend.
-Setelah masuk, tambah operator/admin lain dari menu **Users**.
-
----
-
-## D. Opsi MongoDB (pilih salah satu)
-
-### Opsi A — MongoDB bawaan Coolify (paling mudah, DISARANKAN)
-1. Coolify → Project/Environment yang sama → **+ New Resource → Database → MongoDB**.
-2. Set versi (mis. 7) & password root. Deploy.
-3. Setelah jalan, buka detail database → salin **Connection String / Internal URL**.
-   Bentuknya kira-kira:
-   ```
-   mongodb://root:PASSWORD@<nama-internal-mongo>:27017/?authSource=admin
-   ```
-   > Coolify membuat database ini bisa dihubungi resource lain **dalam Project & Environment yang sama**
-   > melalui hostname internalnya. Pastikan backend berada di Project/Environment yang sama.
-4. Di **Backend → Environment Variables**, isi:
-   ```
-   MONGO_URL=mongodb://root:PASSWORD@<nama-internal-mongo>:27017/?authSource=admin
-   DB_NAME=ttp_ops
-   ```
-5. Redeploy backend.
-
-### Opsi B — Container MongoDB sendiri (Docker Compose)
-File tersedia: `mongodb/docker-compose.yml` (+ `mongodb/.env.example`).
-
-1. Coolify → **+ New Resource → Docker Compose** (repo yang sama).
-2. **Base Directory**: `/mongodb` — agar Coolify memakai
-   `docker-compose.yml` di folder itu.
-3. **Environment Variables** (lihat `mongodb/.env.example`):
-   ```
-   MONGO_ROOT_USERNAME=root
-   MONGO_ROOT_PASSWORD=ganti_password_kuat
-   ```
-4. **Penting — jaringan**: agar backend (app terpisah) bisa menghubungi Mongo ini, pastikan keduanya
-   berada di Project + Environment yang sama, dan aktifkan **"Connect to Predefined Network"** pada
-   kedua resource (Settings resource). Lalu catat **nama service/container Mongo** yang ditampilkan Coolify.
-5. Deploy. Data tersimpan di volume `mongo_data` (persisten).
-6. Di **Backend → Environment Variables**, isi `MONGO_URL` memakai nama host Mongo tsb + authSource:
-   ```
-   MONGO_URL=mongodb://root:ganti_password_kuat@<nama-host-mongo-coolify>:27017/?authSource=admin
-   DB_NAME=ttp_ops
-   ```
-   > `authSource=admin` wajib karena user dibuat sebagai root di database `admin`.
-   > `DB_NAME` boleh apa saja (mis. `ttp_ops`); backend memakai `client[DB_NAME]`.
-
-> **Tips paling anti-ribet (alternatif):** gabungkan Mongo + Backend dalam SATU resource Docker Compose,
-> sehingga backend cukup memakai `MONGO_URL=mongodb://root:pass@mongo:27017/?authSource=admin`
-> (nama service `mongo` langsung resolvable, tanpa urusan jaringan antar-resource). Minta saya bila mau versi ini.
-
-### Opsi C — MongoDB Atlas (cloud, tanpa container)
 ```
-MONGO_URL=mongodb+srv://USER:PASS@CLUSTER.mongodb.net/?retryWrites=true&w=majority
-DB_NAME=ttp_ops
+MARIADB_ROOT_PASSWORD=ganti_password_root_kuat
+MARIADB_PASSWORD=ganti_password_app_kuat
+MARIADB_DATABASE=trirara            # opsional (default trirara)
+MARIADB_USER=trirara                # opsional (default trirara)
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=ganti_password_admin
+CORS_ORIGINS=https://sistem.domainanda.com   # opsi E saja (origin frontend PERSIS)
+
+# Hanya selama migrasi dari versi MongoDB lama (lihat bagian 3):
+MONGO_ROOT_USERNAME=root            # sama dengan nilai lama
+MONGO_ROOT_PASSWORD=...             # sama dengan nilai lama
+DB_NAME=ttp_ops                     # nama database Mongo lama (default ttp_ops)
 ```
-Whitelist IP server Coolify (atau `0.0.0.0/0` untuk uji) di Atlas → Network Access.
+
+Backend membaca koneksi dari `MARIADB_URL` **atau** `MARIADB_HOST/PORT/USER/PASSWORD/DATABASE`
+(di compose sudah diisi otomatis: host `mariadb`, port `3306`). Contoh URL lengkap bila memakai MariaDB eksternal:
+`MARIADB_URL=mysql+asyncmy://USER:PASSWORD@HOST:3306/trirara?charset=utf8mb4`
 
 ---
 
-## E. Opsi GABUNGAN — satu resource Docker Compose (paling anti-ribet)
+## 3. Migrasi data lama MongoDB → MariaDB (sekali jalan, aman)
 
-Jalankan **mongo + backend + frontend** dalam satu resource. Backend menghubungi Mongo lewat nama
-service `mongo` (tanpa urusan jaringan antar-resource). File: `docker-compose.yml` (root) + `.env.example`.
+Compose baru **masih menyertakan service `mongo` lama** dengan volume yang **sama** (`mongo_data`), hanya sebagai
+**sumber baca**. Backend punya variabel `MIGRATE_FROM_MONGO_URL` & `MIGRATE_FROM_MONGO_DB` (sudah terisi di compose).
 
-1. **Edit `frontend/.env.production`** → set `REACT_APP_BACKEND_URL` ke subdomain backend Anda
-   (tanpa `/api`), commit:
-   ```
-   REACT_APP_BACKEND_URL=https://api.sistem.domainanda.com
-   ```
-2. Coolify → **+ New Resource → Docker Compose** (repo yang sama).
-   - **Base Directory**: `/` (root repo, berisi `docker-compose.yml`).
-3. **Environment Variables** (lihat `.env.example`):
-   ```
-   MONGO_ROOT_USERNAME=root
-   MONGO_ROOT_PASSWORD=ganti_password_kuat
-   DB_NAME=ttp_ops
-   CORS_ORIGINS=https://sistem.domainanda.com
-   ADMIN_USERNAME=admin
-   ADMIN_PASSWORD=ganti_password_kuat
-   ADMIN_NAME=Administrator
-   ```
-4. **Atur domain per service** (Coolify mendeteksi 3 service):
-   - `frontend` → `https://sistem.domainanda.com`, port **80**
-   - `backend`  → `https://api.sistem.domainanda.com`, port **8000**
-   - `mongo`    → **tanpa domain** (internal)
-5. Deploy. Data Mongo tersimpan di volume `mongo_data` (persisten).
-6. Login: buka domain frontend → `/login` → Username/Password (`ADMIN_USERNAME`/`ADMIN_PASSWORD`).
+1. **Backup dulu dari aplikasi lama**: Bantuan & Backup → *Unduh Backup* (centang *Sertakan gambar WhatsApp*). Simpan file-nya.
+2. Pastikan env `MONGO_ROOT_USERNAME`, `MONGO_ROOT_PASSWORD`, `DB_NAME` **sama** dengan yang dipakai versi lama.
+3. Tambahkan env MariaDB (bagian 2) → **Deploy**.
+4. Saat backend start, data disalin otomatis (mode *merge*: MongoDB hanya dibaca, data yang sudah ada di MariaDB tidak ditimpa).
+   Cek hasilnya di **Bantuan & Backup → panel Isi Database**: muncul **"Migrasi MongoDB → MariaDB selesai"** dan jumlah baris per tabel.
+   Log backend juga menampilkan baris `[migrasi] OK <tabel> mongo=N -> mariadb=N`.
+5. Cocokkan jumlah Unit, Ops Report, Kas Masuk, Kas Keluar dengan aplikasi lama.
+6. Setelah yakin: hapus service `mongo`, baris `MIGRATE_FROM_MONGO_URL` / `MIGRATE_FROM_MONGO_DB`, dan `depends_on: mongo`
+   dari compose → Deploy ulang. (Volume `mongo_data` boleh disimpan sementara sebagai cadangan.)
 
-> `MONGO_URL` untuk backend **sudah otomatis** dibentuk di `docker-compose.yml`
-> (`mongodb://root:...@mongo:27017/?authSource=admin`) \u2014 Anda tidak perlu menuliskannya manual.
->
-> **Ingin satu domain saja (tanpa CORS/subdomain backend)?** Beri tahu saya \u2014 saya siapkan varian
-> di mana nginx frontend mem-proxy `/api` ke backend, sehingga cukup satu domain dan `REACT_APP_BACKEND_URL` dikosongkan.
+**Migrasi manual** (Coolify → backend → *Terminal*):
+```
+python scripts/migrate_mongo_to_mariadb.py --dry-run      # lihat jumlah tanpa menulis
+python scripts/migrate_mongo_to_mariadb.py                 # jalankan (merge, aman diulang)
+python scripts/migrate_mongo_to_mariadb.py --mongo-url "mongodb://root:PASS@HOST:27017/?authSource=admin" --mongo-db ttp_ops
+```
+**Tanpa akses Mongo** (mis. Mongo Atlas sudah mati): unggah file backup `.json.gz` lama ke container lalu
+`python scripts/restore_db.py backup-lama.json.gz` — format backup lama didukung.
+
+Sesi login tidak dimigrasi: semua pengguna cukup login ulang. Username, password, PIN, dan peran tetap sama.
 
 ---
 
-## F. Opsi SATU DOMAIN — compose gabungan, tanpa subdomain backend & tanpa CORS (TERSIMPEL)
+## 4. Deploy opsi F (satu domain) — langkah ringkas
 
-Hanya **satu domain** (frontend). nginx frontend otomatis mem-proxy `/api` ke backend internal.
-Tidak perlu subdomain backend, tidak perlu atur CORS, tidak perlu `.env.production`.
-File: `docker-compose.singledomain.yml`, `frontend/Dockerfile.singledomain`,
-`frontend/nginx.single-domain.conf`, `.env.singledomain.example`.
+1. Coolify → **+ New Resource → Docker Compose** → repo ini → file `docker-compose.singledomain.yml`.
+2. Isi Environment Variables (bagian 2).
+3. Domain: **hanya** service `frontend` → `https://sistem.domainanda.com` (port 80). `backend`, `mariadb`, `mongo` tanpa domain.
+4. Deploy. Buka `https://sistem.domainanda.com/login`.
 
-1. Coolify → **+ New Resource → Docker Compose** (repo yang sama).
-   - **Base Directory**: `/` (root repo, berisi `docker-compose.singledomain.yml`).
-   - **Docker Compose file**: `docker-compose.singledomain.yml` (bila Coolify menanyakan nama file compose).
-2. **Environment Variables** (lihat `.env.singledomain.example`):
-   ```
-   MONGO_ROOT_USERNAME=root
-   MONGO_ROOT_PASSWORD=ganti_password_kuat
-   DB_NAME=ttp_ops
-   ADMIN_USERNAME=admin
-   ADMIN_PASSWORD=ganti_password_kuat
-   ADMIN_NAME=Administrator
-   ```
-   > Tidak perlu `REACT_APP_BACKEND_URL` maupun `CORS_ORIGINS`.
-3. **Domain**: cukup untuk service **frontend** → `https://sistem.domainanda.com`, port **80**.
-   `backend` & `mongo` biarkan **internal** (tanpa domain).
-4. Deploy. Buka domain → `/login` → masuk dengan admin dari env.
+## 5. Deploy opsi E (dua subdomain)
 
-> Cara kerja: browser hanya bicara ke satu origin. Request ke `/api/...` diteruskan nginx ke
-> `backend:8000` di jaringan internal compose. Cookie login jadi same-origin (paling aman & tanpa ribet).
-> `frontend/Dockerfile.singledomain` sengaja mengosongkan `REACT_APP_BACKEND_URL` saat build sehingga
-> `api.js` memakai path relatif `/api`.
+1. `frontend/.env.production` → `REACT_APP_BACKEND_URL=https://api.sistem.domainanda.com` (tanpa `/api`), commit.
+2. Docker Compose → `docker-compose.yml`. Domain: `frontend` → `https://sistem.domainanda.com` (port 80),
+   `backend` → `https://api.sistem.domainanda.com` (port 8000). `mariadb` & `mongo` internal.
+3. `CORS_ORIGINS` = origin frontend persis. Deploy.
+
+## 6. Opsi B (resource terpisah)
+
+- Database: Coolify → **+ New → Database → MariaDB** (atau compose `mariadb/docker-compose.yml`). Catat host internal, user, password.
+- Backend: Application → Dockerfile, Base Directory `/backend`, port 8000, env `MARIADB_HOST`, `MARIADB_PORT`,
+  `MARIADB_USER`, `MARIADB_PASSWORD`, `MARIADB_DATABASE` (atau `MARIADB_URL`). Pastikan backend & database di
+  jaringan Docker yang sama ("Connect to Predefined Network").
+- Frontend: Application → Dockerfile root `/Dockerfile`, port 80, domain frontend.
 
 ---
 
-## Ringkasan pilihan deployment
+## 7. Login pertama
 
-| Opsi | Domain | Mongo | Cocok bila |
-|------|--------|-------|------------|
-| A/B/C + 2 app terpisah | 2 subdomain (frontend + api) | Coolify DB / container / Atlas | Ingin frontend & backend benar-benar terpisah |
-| **E** (compose gabungan) | 2 subdomain | container internal `mongo` | Mau satu resource, tetap pakai subdomain api |
-| **F** (compose satu domain) | **1 domain saja** | container internal `mongo` | **Paling sederhana** \u2014 tanpa CORS/subdomain |
+`/login` → tab **Username/Password** → `ADMIN_USERNAME` / `ADMIN_PASSWORD`. Admin awal hanya dibuat bila
+belum ada admin di database (setelah migrasi, akun-akun lama langsung bisa dipakai).
 
-> Pilih **satu** opsi saja. Untuk kebanyakan kasus, **Opsi F** paling mudah dijalankan.
+## 8. Backup & pemulihan
 
----
+- Aplikasi: **Bantuan & Backup → Unduh Backup** (.json.gz, semua tabel).
+- Server: `python scripts/backup_db.py --out /app/backups --keep 14`
+- SQL bawaan: `mariadb-dump -h mariadb -u trirara -p trirara | gzip > backup.sql.gz` (dari container mariadb).
+- Restore: `python scripts/restore_db.py FILE.json.gz --dry-run` lalu `--mode merge` (default, tidak menimpa).
+  Uji ke database terpisah: `--target-db trirara_restore_test`.
 
 ## Catatan & Troubleshooting
 
-- **`.env.production` frontend**: nilainya dibaca saat BUILD (`npm run build`). Jika mengubah URL backend,
-  Anda harus **redeploy/rebuild** frontend agar berubah.
-- **Lama muncul `.../api-dev/api`?** Itu karena nilai lama `REACT_APP_BACKEND_URL` mengandung path.
-  Pastikan hanya origin murni: `https://api.sistem.domainanda.com` (tanpa `/api`, tanpa `/api-dev`).
-- **Login gagal / 401 setelah login**: hampir selalu karena `CORS_ORIGINS` di backend tidak sama persis
-  dengan origin frontend, atau salah satu sisi belum HTTPS. Cookie butuh HTTPS (Secure) + origin eksak.
-- **`requirements.txt`**: sudah dibersihkan agar aman di `python:3.11-slim`
-  (menghapus `emergentintegrations` yang tidak ada di PyPI & `jq` yang butuh compiler; menambahkan `httpx`
-  yang dipakai kode). Jangan menambah lagi paket yang butuh kompilasi tanpa menyiapkan build tools.
-- **MongoDB Atlas**: whitelist IP server Coolify Anda (atau `0.0.0.0/0` untuk uji) di Atlas Network Access.
-- **Alternatif Mongo tanpa Atlas**: buat satu lagi resource **Database → MongoDB** di Coolify, lalu pakai
-  connection string internalnya sebagai `MONGO_URL` (mis. `mongodb://user:pass@host:27017`).
-- **Google OAuth (opsional)**: hanya relevan bila memakai login Google; email pada `ADMIN_EMAILS`
-  otomatis menjadi admin. Login manual (username/password) tidak membutuhkannya.
+- **Backend log `[mariadb] belum siap ...`**: backend menunggu hingga 60 detik. Periksa service `mariadb` sehat dan
+  `MARIADB_PASSWORD` sama di service mariadb & backend. Mengganti password **setelah** volume dibuat tidak
+  mengubah password di database — ubah via `ALTER USER` atau buat volume baru.
+- **`Access denied for user`**: user/password salah atau database belum dibuat (image MariaDB membuatnya otomatis
+  dari `MARIADB_DATABASE` hanya saat volume pertama kali kosong).
+- **Login gagal / 401 (opsi E)**: `CORS_ORIGINS` harus sama persis dengan origin frontend & keduanya HTTPS.
+- **`.env.production` frontend** dibaca saat build — ubah URL backend → rebuild frontend.
+- **`requirements.txt`** sengaja ramping & aman untuk `python:3.11-slim` (tanpa paket yang perlu compiler).
+  Driver database: `SQLAlchemy[asyncio]` + `asyncmy` (wheel tersedia untuk x86_64 & ARM). `pymongo` tetap ada hanya
+  untuk script migrasi & format backup JSON.

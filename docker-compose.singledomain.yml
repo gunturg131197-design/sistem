@@ -1,16 +1,36 @@
 # ============================================================
-# EXCAVA.OPS - Compose GABUNGAN varian SATU DOMAIN untuk Coolify v4
-# 3 service: mongo + backend + frontend.
+# EXCAVA.OPS / TRIRARA - Compose GABUNGAN varian SATU DOMAIN untuk Coolify v4
+# Service: mariadb + backend + frontend (+ mongo LAMA hanya untuk migrasi sekali jalan)
 # HANYA "frontend" yang punya domain publik. nginx frontend mem-proxy /api
 # ke backend (internal). Tidak perlu subdomain backend & tidak perlu CORS.
 # ------------------------------------------------------------
 # Domain:
 #   - frontend -> https://sistem.domainanda.com   (port 80)  <-- SATU-SATUNYA domain
 #   - backend  -> internal (port 8000, tanpa domain)
-#   - mongo    -> internal (tanpa domain)
+#   - mariadb  -> internal (tanpa domain)
+#   - mongo    -> internal (dihapus setelah migrasi)
 # ============================================================
 
 services:
+  mariadb:
+    image: mariadb:11.4
+    restart: unless-stopped
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci", "--max-allowed-packet=64M"]
+    environment:
+      - MARIADB_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD:-ubah_password_root_ini}
+      - MARIADB_DATABASE=${MARIADB_DATABASE:-trirara}
+      - MARIADB_USER=${MARIADB_USER:-trirara}
+      - MARIADB_PASSWORD=${MARIADB_PASSWORD:-ubah_password_ini}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # LAMA: sumber migrasi saja (volume sama dengan versi lama). Hapus setelah migrasi terverifikasi.
   mongo:
     image: mongo:7
     restart: unless-stopped
@@ -30,8 +50,14 @@ services:
       context: ./backend
     restart: unless-stopped
     environment:
-      - MONGO_URL=mongodb://${MONGO_ROOT_USERNAME:-root}:${MONGO_ROOT_PASSWORD:-ubah_password_ini}@mongo:27017/?authSource=admin
-      - DB_NAME=${DB_NAME:-ttp_ops}
+      - MARIADB_HOST=mariadb
+      - MARIADB_PORT=3306
+      - MARIADB_DATABASE=${MARIADB_DATABASE:-trirara}
+      - MARIADB_USER=${MARIADB_USER:-trirara}
+      - MARIADB_PASSWORD=${MARIADB_PASSWORD:-ubah_password_ini}
+      # Migrasi otomatis SEKALI dari MongoDB lama. Hapus 2 baris ini setelah migrasi.
+      - MIGRATE_FROM_MONGO_URL=mongodb://${MONGO_ROOT_USERNAME:-root}:${MONGO_ROOT_PASSWORD:-ubah_password_ini}@mongo:27017/?authSource=admin
+      - MIGRATE_FROM_MONGO_DB=${DB_NAME:-ttp_ops}
       # Same-origin -> CORS tidak dipakai; biarkan default aman.
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
       # Admin pertama otomatis (DB kosong) — GANTI password!
@@ -40,6 +66,8 @@ services:
       - ADMIN_NAME=${ADMIN_NAME:-Administrator}
       - ADMIN_EMAILS=${ADMIN_EMAILS:-}
     depends_on:
+      mariadb:
+        condition: service_healthy
       mongo:
         condition: service_healthy
     expose:
@@ -56,4 +84,5 @@ services:
       - "80"
 
 volumes:
+  mariadb_data:
   mongo_data:

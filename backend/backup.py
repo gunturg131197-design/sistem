@@ -1,8 +1,8 @@
-"""Backup database (admin) — unduh arsip .json.gz berisi semua koleksi (format MongoDB Extended JSON).
+"""Backup database MariaDB (admin) — unduh arsip .json.gz berisi semua tabel (format trirara-backup-v1, JSON).
 
 Aman: hanya-baca, tidak pernah menghapus / mereset data. Koleksi sesi login (token) tidak ikut dicadangkan.
 Gambar WhatsApp (wa_media) opsional karena ukurannya besar.
-Pemulihan dilakukan dengan /app/scripts/restore_db.py (mode default: hanya menambah dokumen yang belum ada).
+Pemulihan dilakukan dengan scripts/restore_db.py (mode default: hanya menambah dokumen yang belum ada).
 """
 import gzip
 import io
@@ -27,7 +27,9 @@ def build_backup_router(db, require_admin: Callable) -> APIRouter:
         names = sorted(n for n in await db.list_collection_names() if n not in EXCLUDE and not n.startswith("system."))
         counts = {n: await db[n].estimated_document_count() for n in names}
         last = await db.app_settings.find_one({"key": "last_backup"}, {"_id": 0})
-        return {"collections": counts, "excluded": sorted(EXCLUDE), "media_collections": sorted(MEDIA), "last_backup": last}
+        mig = await db.app_settings.find_one({"key": "mongo_migration"}, {"_id": 0, "tables": 0})
+        return {"collections": counts, "excluded": sorted(EXCLUDE), "media_collections": sorted(MEDIA), "last_backup": last,
+                "database": {"engine": "MariaDB", "name": db.name}, "migration": mig}
 
     @r.get("/api/admin/backup")
     async def download(include_media: bool = False, admin=Depends(require_admin)):
@@ -38,7 +40,7 @@ def build_backup_router(db, require_admin: Callable) -> APIRouter:
         now = datetime.now(timezone.utc)
         with gzip.GzipFile(fileobj=buf, mode="wb") as gz:
             meta = {"app": "TRIRARA TUNGGAL PUTRA", "format": "trirara-backup-v1", "created_at": now.isoformat(),
-                    "created_by": admin.name, "db": db.name, "include_media": include_media}
+                    "created_by": admin.name, "db": db.name, "engine": "mariadb", "include_media": include_media}
             gz.write(b'{"meta": ' + json_util.dumps(meta).encode() + b', "collections": {')
             for i, n in enumerate(names):
                 gz.write(("," if i else "").encode() + json_util.dumps(n).encode() + b": [")

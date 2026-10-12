@@ -14,7 +14,6 @@ from zoneinfo import ZoneInfo
 from typing import Any, Callable, Optional
 
 import httpx
-from bson import Binary
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel
@@ -247,7 +246,7 @@ def build_whatsapp_router(db, require_admin: Callable, hooks: dict) -> APIRouter
         except Exception:
             raise HTTPException(400, "File bukan gambar yang valid (gunakan JPG/PNG/WEBP)")
         media_id = str(uuid.uuid4())
-        await db.wa_media.insert_one({"id": media_id, "data": Binary(jpeg), "mime": "image/jpeg", "orig_mime": mime, "created_at": _now()})
+        await db.wa_media.insert_one({"id": media_id, "data": bytes(jpeg), "mime": "image/jpeg", "orig_mime": mime, "created_at": _now()})
         doc = {
             "id": str(uuid.uuid4()), "source": source, "message_id": message_id, "from_phone": norm_phone(from_phone),
             "from_name": from_name, "caption": (caption or "").strip(), "media_id": media_id, "status": "processing",

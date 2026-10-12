@@ -17,7 +17,7 @@ function Doc({ doc }) {
       {doc.sections.map((s) => (
         <section key={s.h} className="border border-border bg-card p-5">
           <h2 className="font-display font-bold text-lg tracking-tight border-l-2 border-primary pl-3">{s.h}</h2>
-          <ul className="mt-3 space-y-1.5">{s.p.map((t, i) => <li key={i} className={`text-sm text-muted-foreground ${/^(python|mongodump)/.test(t) ? "font-mono text-xs text-foreground bg-background border border-border p-2 break-all" : ""}`}>{t}</li>)}</ul>
+          <ul className="mt-3 space-y-1.5">{s.p.map((t, i) => <li key={i} className={`text-sm text-muted-foreground ${/^(python|mariadb-dump|mariadb )/.test(t) ? "font-mono text-xs text-foreground bg-background border border-border p-2 break-all" : ""}`}>{t}</li>)}</ul>
         </section>
       ))}
     </div>
@@ -61,9 +61,17 @@ function BackupPanel() {
         <p className="text-xs text-muted-foreground flex gap-2"><ShieldCheckIcon size={14} className="text-primary shrink-0" /> Sesi login tidak ikut dicadangkan. File memuat data keuangan & hash kata sandi — simpan secara pribadi.</p>
       </div>
       <div className="xl:col-span-2 border border-border bg-card">
-        <div className="flex items-center gap-2 p-4 border-b border-border"><p className="font-display font-black text-xl tracking-tighter mr-auto">Isi Database</p>
-          <span className="font-mono text-xs" data-testid="backup-total">{total.toLocaleString("id-ID")} dokumen</span>
+        <div className="flex flex-wrap items-center gap-2 p-4 border-b border-border"><p className="font-display font-black text-xl tracking-tighter">Isi Database</p>
+          {info?.database && <span data-testid="backup-db-engine" className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 border border-primary/60 text-primary">{info.database.engine} · {info.database.name}</span>}
+          <span className="mr-auto" />
+          <span className="font-mono text-xs" data-testid="backup-total">{total.toLocaleString("id-ID")} baris · {info ? Object.keys(info.collections).length : 0} tabel</span>
           <Button data-testid="backup-refresh" size="sm" variant="outline" onClick={load} className="rounded-sm border-border hover:border-primary hover:text-primary"><ArrowClockwiseIcon size={14} weight="bold" /></Button></div>
+        {info?.migration && (
+          <div data-testid="backup-migration" className={`px-4 py-2 border-b border-border text-xs flex flex-wrap gap-x-3 ${info.migration.ok ? "text-emerald-400" : "text-accent"}`}>
+            <b>{info.migration.ok ? "Migrasi MongoDB → MariaDB selesai" : "Migrasi MongoDB → MariaDB belum lengkap"}</b>
+            <span className="text-muted-foreground">{fmt(info.migration.finished_at)} · sumber: {info.migration.mongo_db}{info.migration.error ? ` · ${info.migration.error}` : ""}</span>
+          </div>
+        )}
         {!info ? <div className="p-4"><Skeleton className="h-40 rounded-sm" /></div> : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4" data-testid="backup-collections">
             {Object.entries(info.collections).map(([k, v]) => (

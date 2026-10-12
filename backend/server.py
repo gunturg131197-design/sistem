@@ -1,8 +1,7 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Cookie, Header
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo import ReturnDocument
+from mariadb_store import Store, ReturnDocument, build_url_from_env
 import os
 import logging
 import uuid
@@ -23,12 +22,71 @@ from bonus import build_bonus_router, ensure_bonus_indexes
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# Database: MariaDB (lihat mariadb_store.py & db_schema.py). Koneksi dari MARIADB_URL atau MARIADB_HOST/PORT/USER/PASSWORD/DATABASE.
+db = Store(build_url_from_env(dict(os.environ)))
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
+
+
+@app.on_event("startup")
+async def _init_mariadb():
+    """Buat/lengkapi semua tabel MariaDB. Menunggu hingga 60 detik bila server MariaDB belum siap (docker-compose)."""
+    import asyncio as _asyncio
+    import subprocess as _sp
+    lg = logging.getLogger(__name__)
+    # Khusus preview Emergent: nyalakan MariaDB lokal otomatis bila mati (pod restart). Tidak dipakai di Coolify.
+    autostart = os.environ.get("PREVIEW_MARIADB_AUTOSTART", "") in ("1", "true", "yes")
+    started = False
+    tries = 150 if autostart else 30
+    for attempt in range(tries):
+        try:
+            await db.init_schema()
+            lg.info(f"[mariadb] skema siap ({db.name})")
+            return
+        except Exception as e:  # noqa: BLE001
+            lg.warning(f"[mariadb] belum siap (percobaan {attempt + 1}/{tries}): {type(e).__name__}: {str(e)[:160]}")
+            script = Path("/app/scripts/preview_mariadb.sh")
+            if autostart and not started and script.exists():
+                started = True
+                lg.warning("[mariadb] menjalankan scripts/preview_mariadb.sh (preview lokal)")
+                _sp.Popen(["bash", str(script)], stdout=open("/tmp/preview_mariadb.log", "a"), stderr=_sp.STDOUT, start_new_session=True)
+            await _asyncio.sleep(2)
+    raise RuntimeError("Tidak bisa terhubung ke MariaDB — periksa MARIADB_URL / MARIADB_HOST")
+
+
+@app.on_event("startup")
+async def _auto_migrate_from_mongo():
+    """Migrasi otomatis satu kali dari MongoDB lama bila MIGRATE_FROM_MONGO_URL & MIGRATE_FROM_MONGO_DB di-set.
+    Mode merge (hanya menambah data yang belum ada, Mongo hanya dibaca). Hasil dicatat di app_settings 'mongo_migration'."""
+    url, name = os.environ.get("MIGRATE_FROM_MONGO_URL", ""), os.environ.get("MIGRATE_FROM_MONGO_DB", "")
+    lg = logging.getLogger(__name__)
+    if not url or not name:
+        return
+    prev = await db.app_settings.find_one({"key": "mongo_migration"}, {"_id": 0})
+    if prev and prev.get("ok") and os.environ.get("MIGRATE_FROM_MONGO_FORCE", "") not in ("1", "true", "yes"):
+        lg.info(f"[migrasi] sudah selesai {prev.get('finished_at', '')} — dilewati (set MIGRATE_FROM_MONGO_FORCE=1 untuk ulang)")
+        return
+
+    async def job():
+        from scripts.migrate_mongo_to_mariadb import migrate_all
+        started = datetime.now(timezone.utc).isoformat()
+        try:
+            res = await migrate_all(url, name, db, log=lambda m: lg.info(f"[migrasi] {m}"))
+            doc = {"key": "mongo_migration", "ok": res["ok"], "started_at": started, "finished_at": datetime.now(timezone.utc).isoformat(),
+                   "mongo_db": name, "tables": res["tables"], "error": ""}
+        except Exception as e:  # noqa: BLE001
+            lg.error(f"[migrasi] gagal: {type(e).__name__}: {e}")
+            doc = {"key": "mongo_migration", "ok": False, "started_at": started, "finished_at": datetime.now(timezone.utc).isoformat(),
+                   "mongo_db": name, "tables": {}, "error": f"{type(e).__name__}: {str(e)[:300]}"}
+        await db.app_settings.update_one({"key": "mongo_migration"}, {"$set": doc}, upsert=True)
+        total = sum(t.get("ditambah", 0) for t in doc["tables"].values())
+        await db.wa_audit.insert_one({"id": str(uuid.uuid4()), "at": doc["finished_at"], "action": "db_migration", "actor": "Sistem", "inbox_id": "",
+                                      "detail": (f"Migrasi MongoDB '{name}' -> MariaDB selesai: {total} baris ditambahkan" if doc["ok"]
+                                                 else f"Migrasi MongoDB '{name}' -> MariaDB belum lengkap: {doc['error'] or 'ada tabel yang kurang'}"),
+                                      "data": {"tables": doc["tables"]}})
+    # dijalankan SEBELUM startup lain (bootstrap admin, backfill kas) agar tidak ada data ganda / admin dobel
+    await job()
 
 
 def hash_password(password: str) -> str:
@@ -1346,4 +1404,4 @@ async def _backfill_kas_keluar():
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
-    client.close()
+    await db.close()
