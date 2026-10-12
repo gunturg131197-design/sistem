@@ -34,6 +34,18 @@ Pindah data dari MongoDB lama: isi `MIGRATE_FROM_MONGO_URL` + `MIGRATE_FROM_MONG
 
 Opsi docker-compose di bawah ini tetap tersedia sebagai alternatif.
 
+### Scheduled Tasks (pengganti penjadwal WA)
+
+Coolify → Application → **Scheduled Tasks** → Add (Container: aplikasi ini). Jam di bawah = **WITA**;
+bila timezone server/instance Coolify = UTC, pakai kolom UTC.
+
+| Nama | Command | Cron (WITA) | Cron (UTC) |
+|---|---|---|---|
+| wa-daily-summary | `python scripts/cron_call.py daily-summary` | `0 20 * * *` | `0 12 * * *` |
+| wa-outbox-retry | `python scripts/cron_call.py wa-outbox-retry` | `*/30 * * * *` | `*/30 * * * *` |
+| wa-piutang-reminder | `python scripts/cron_call.py piutang-reminder` | `0 * * * *` | `0 * * * *` |
+| wa-weekly-owner-report | `python scripts/cron_call.py weekly-report` | `0 8 * * 1` | `0 0 * * 1` |
+
 ### Troubleshooting cepat
 
 | Gejala | Penyebab | Solusi |
