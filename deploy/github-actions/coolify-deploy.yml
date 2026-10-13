@@ -1,0 +1,84 @@
+# Deploy otomatis ke Coolify setiap ada push ke main, lalu verifikasi https://trirara.my.id hidup.
+#
+# Secrets repo (Settings → Secrets and variables → Actions → New repository secret):
+#   COOLIFY_TOKEN   : Coolify API token (Keys & Tokens → API tokens, izin "deploy"), format "angka|teks"
+# Variables repo (opsional, tab "Variables"):
+#   COOLIFY_URL     : default http://103.150.197.131:8000
+#   COOLIFY_APP_UUID: default ecmsxkyycmjajbinmcbpxshl
+#   APP_URL         : default https://trirara.my.id
+#
+# Bila "Auto Deploy" Coolify (GitHub App) sudah aktif, workflow ini tetap aman: Coolify
+# menggabungkan deploy untuk commit yang sama, dan langkah verifikasi tetap memberi status hijau/merah.
+name: Deploy Coolify
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "tests/**"
+      - "test_reports/**"
+      - "memory/**"
+      - "**/*.md"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force rebuild tanpa cache"
+        type: boolean
+        default: false
+
+concurrency:
+  group: coolify-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      COOLIFY_URL: ${{ vars.COOLIFY_URL || 'http://103.150.197.131:8000' }}
+      COOLIFY_APP_UUID: ${{ vars.COOLIFY_APP_UUID || 'ecmsxkyycmjajbinmcbpxshl' }}
+      APP_URL: ${{ vars.APP_URL || 'https://trirara.my.id' }}
+      COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+    steps:
+      - name: Picu deploy Coolify
+        run: |
+          if [ -z "$COOLIFY_TOKEN" ]; then
+            echo "::warning::Secret COOLIFY_TOKEN belum diisi — lewati pemicu (mengandalkan Auto Deploy Coolify)."
+            exit 0
+          fi
+          FORCE="${{ github.event.inputs.force || 'false' }}"
+          code=$(curl -sS -o resp.json -w '%{http_code}' --max-time 60 \
+            -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
+            "${COOLIFY_URL%/}/api/v1/deploy?uuid=${COOLIFY_APP_UUID}&force=${FORCE}")
+          echo "HTTP $code"; cat resp.json; echo
+          if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+            echo "::error::Coolify menolak permintaan deploy (HTTP $code). Cek token / UUID / API Access."
+            exit 1
+          fi
+
+      - name: Tunggu aplikasi hidup (maks 20 menit)
+        run: |
+          sleep 60
+          for i in $(seq 1 76); do
+            live=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${APP_URL%/}/api/health/live" || true)
+            if [ "$live" = "200" ]; then
+              echo "Aplikasi hidup setelah ~$((60 + i * 15)) detik"
+              break
+            fi
+            echo "[$i] /api/health/live = $live (menunggu build/rolling update...)"
+            sleep 15
+          done
+          [ "$live" = "200" ] || { echo "::error::${APP_URL}/api/health/live tidak 200 setelah 20 menit. Cek Deployments & Logs di Coolify."; exit 1; }
+
+      - name: Cek koneksi MariaDB (/api/health)
+        run: |
+          code=$(curl -s -o health.json -w '%{http_code}' --max-time 15 "${APP_URL%/}/api/health")
+          echo "HTTP $code"; cat health.json; echo
+          {
+            echo "### Deploy ${GITHUB_SHA::7} → ${APP_URL}"
+            echo '```json'; cat health.json; echo; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" != "200" ]; then
+            echo "::error::Aplikasi hidup tapi database belum tersambung — periksa DB_HOST/DB_* di Coolify (detail di atas)."
+            exit 1
+          fi
