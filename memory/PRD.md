@@ -98,3 +98,4 @@ Aplikasi sistem pelaporan untuk alat berat excavator. Fields: unit excavator, no
 - docker-compose(.singledomain).yml: service mariadb:11.4 (volume mariadb_data) + mongo lama (volume mongo_data, hanya sumber migrasi). mariadb/docker-compose.yml standalone. DEPLOY_COOLIFY.md ditulis ulang.
 - requirements.txt: + SQLAlchemy[asyncio], asyncmy, greenlet, Pillow (bug lama: PIL di-import tanpa terdaftar); − motor. pymongo tetap (bson + migrasi).
 - Preview Emergent: MariaDB lokal via scripts/preview_mariadb.sh (data di /app/.mariadb_data), auto-start oleh backend bila PREVIEW_MARIADB_AUTOSTART=1.
+- PR #6: .env.example lengkap + backend/scripts/cron_call.py (Coolify Scheduled Tasks untuk 4 cron WA). https://github.com/gunturg131197-design/sistem/pull/6

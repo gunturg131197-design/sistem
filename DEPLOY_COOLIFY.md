@@ -34,11 +34,24 @@ Pindah data dari MongoDB lama: isi `MIGRATE_FROM_MONGO_URL` + `MIGRATE_FROM_MONG
 
 Opsi docker-compose di bawah ini tetap tersedia sebagai alternatif.
 
+### Scheduled Tasks (pengganti penjadwal WA)
+
+Coolify → Application → **Scheduled Tasks** → Add (Container: aplikasi ini). Jam di bawah = **WITA**;
+bila timezone server/instance Coolify = UTC, pakai kolom UTC.
+
+| Nama | Command | Cron (WITA) | Cron (UTC) |
+|---|---|---|---|
+| wa-daily-summary | `python scripts/cron_call.py daily-summary` | `0 20 * * *` | `0 12 * * *` |
+| wa-outbox-retry | `python scripts/cron_call.py wa-outbox-retry` | `*/30 * * * *` | `*/30 * * * *` |
+| wa-piutang-reminder | `python scripts/cron_call.py piutang-reminder` | `0 * * * *` | `0 * * * *` |
+| wa-weekly-owner-report | `python scripts/cron_call.py weekly-report` | `0 8 * * 1` | `0 0 * * 1` |
+
 ### Troubleshooting cepat
 
 | Gejala | Penyebab | Solusi |
 |---|---|---|
 | `no available server` (503 Traefik) | Container belum healthy / mati, atau Ports Exposes salah | Ports Exposes = `8000`; lihat tab **Logs** container. Setelah versi ini, container tetap hidup walau DB gagal |
+| Health Check Coolify selalu gagal | Health Check bawaan Coolify menjalankan `curl`/`wget` di dalam container | Image sudah berisi `curl` & `wget`. Bila diaktifkan isi: Path `/api/health/live`, Port `8000`, Scheme `http` |
 | `/api/health` → `"status":"error"` + `Name or service not known` | `DB_HOST` salah / beda network | Isi `DB_HOST` = *Internal host* MariaDB (bukan `localhost`, bukan `mariadb` kecuali memang namanya). Aktifkan **Connect to Predefined Network** di app & database |
 | `/api/health` → `Access denied for user` | `DB_USERNAME` / `DB_PASSWORD` tidak sama dengan resource MariaDB | Salin persis dari halaman database Coolify |
 | `/api/health` → `Unknown database` | `DB_DATABASE` salah | Samakan dengan "Initial Database" MariaDB |
