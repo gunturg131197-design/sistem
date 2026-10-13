@@ -78,7 +78,12 @@ WORKDIR /app
 COPY --from=backend-build /opt/venv /opt/venv
 COPY --chown=app:app backend/ /app/
 COPY --from=frontend-build --chown=app:app /build/build /app/static
-RUN rm -f /app/.env /app/requirements.txt && mkdir -p /app/backups && chown app:app /app /app/backups
+# Info build untuk panel "Status Sistem". SOURCE_COMMIT hanya terisi bila Coolify → Advanced → Source commit
+# = "Available during build"; bawaan ("Runtime only") commit tetap terbaca dari env SOURCE_COMMIT saat runtime.
+ARG SOURCE_COMMIT=""
+RUN rm -f /app/.env /app/requirements.txt && mkdir -p /app/backups \
+    && printf '{"commit":"%s","built_at":"%s"}\n' "$SOURCE_COMMIT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /app/build_info.json \
+    && chown app:app /app /app/backups /app/build_info.json
 
 USER app
 # 8000 = port utama (isi "Ports Exposes" Coolify = 8000). 3000 = cadangan bila Ports Exposes masih bawaan Coolify.

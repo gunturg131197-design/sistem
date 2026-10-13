@@ -17,6 +17,7 @@ from whatsapp import build_whatsapp_router
 from daily_summary import build_summary_router
 from wa_reports import build_reports_router
 from backup import build_backup_router
+from system_status import build_system_status_router, version_info
 from bonus import build_bonus_router, ensure_bonus_indexes
 
 
@@ -38,7 +39,8 @@ def _safe_target(url: str) -> str:
 
 
 # Status boot: startup berjalan di background agar HTTP (healthcheck/Traefik) langsung hidup walau DB belum siap
-BOOT = {"ready": False, "db_error": "", "db_attempts": 0, "target": _safe_target(_DB_URL), "task": None}
+BOOT = {"ready": False, "db_error": "", "db_attempts": 0, "target": _safe_target(_DB_URL), "task": None,
+        "started_at": datetime.now(timezone.utc), "ready_at": None}
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -1348,6 +1350,7 @@ app.include_router(build_whatsapp_router(db, require_admin, {"next_bukti": next_
 app.include_router(build_summary_router(db, require_admin))
 app.include_router(build_reports_router(db, require_admin))
 app.include_router(build_backup_router(db, require_admin))
+app.include_router(build_system_status_router(db, require_admin, BOOT))
 app.include_router(build_bonus_router(db, require_admin, next_bukti))
 
 
@@ -1368,8 +1371,11 @@ async def health():
 
 @app.get("/api/health/live")
 async def health_live():
-    """Liveness untuk HEALTHCHECK Docker: proses hidup (selalu 200). Status DB lihat /api/health."""
-    return {"status": "alive", "startup_ready": BOOT["ready"]}
+    """Liveness untuk HEALTHCHECK Docker: proses hidup (selalu 200). Status DB lihat /api/health.
+    `version` = commit yang sedang tayang (bukan rahasia) → cara cepat memastikan deploy terbaru sudah jalan."""
+    v = version_info()
+    return {"status": "alive", "startup_ready": BOOT["ready"], "version": v.get("commit_short"),
+            "uptime_seconds": int((datetime.now(timezone.utc) - BOOT["started_at"]).total_seconds())}
 
 
 # ---------- Frontend React (build) disajikan dari container yang sama (Dockerfile root) ----------
@@ -1486,6 +1492,7 @@ async def _run_startup_sequence():
         except Exception as e:  # noqa: BLE001
             logger.error(f"[startup] {getattr(fn, '__name__', fn)} gagal: {type(e).__name__}: {e}")
     BOOT["ready"] = True
+    BOOT["ready_at"] = datetime.now(timezone.utc)
     logger.info("[startup] semua tugas startup selesai — aplikasi siap")
 
 

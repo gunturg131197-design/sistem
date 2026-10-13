@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import api from "@/lib/api";
 import { HELP_DOCS } from "@/lib/helpDocs";
+import { SystemStatusPanel } from "@/components/SystemStatusPanel";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -91,8 +92,9 @@ export default function HelpPage() {
       <div className="border-b border-border pb-6 mb-6">
         <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-primary">// Bantuan</p>
         <h1 className="font-display font-black text-4xl tracking-tighter mt-1">Bantuan & Backup</h1>
-        <p className="text-sm text-muted-foreground mt-2 max-w-2xl">Panduan penggunaan aplikasi, pengaturan otomatisasi, prosedur backup & pemulihan database, serta panduan integrasi WhatsApp untuk nanti.</p>
+        <p className="text-sm text-muted-foreground mt-2 max-w-2xl">Status sistem yang sedang tayang, panduan penggunaan aplikasi, pengaturan otomatisasi, prosedur backup & pemulihan database, serta panduan integrasi WhatsApp untuk nanti.</p>
       </div>
+      <SystemStatusPanel />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="h-auto flex flex-wrap justify-start rounded-sm bg-card border border-border p-1 mb-6 gap-1">
           {HELP_DOCS.map((d) => <TabsTrigger key={d.id} value={d.id} data-testid={`help-tab-${d.id}`} className="rounded-sm text-xs px-3 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">{d.title}</TabsTrigger>)}
