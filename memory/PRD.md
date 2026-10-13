@@ -15,12 +15,12 @@ Aplikasi sistem pelaporan untuk alat berat excavator. Fields: unit excavator, no
 - **Operator**: Submits own operation reports. Views own payroll & ops only.
 
 ## Architecture
-- Backend: FastAPI + Motor + MongoDB. Session-based auth via Emergent Google OAuth (httpOnly cookie).
+- Backend: FastAPI + Motor + MongoDB. Session-based auth: username/password (akun dibuat admin), httpOnly cookie. Login Google DIHAPUS.
 - Frontend: React 19 + React Router + Shadcn UI + Recharts + Phosphor Icons + jsPDF + xlsx.
 - Fonts: Chivo (heading), IBM Plex Sans/Mono (body).
 
 ## Implemented (2026-02)
-- Emergent Google OAuth (login, callback, /auth/me, logout)
+- Login username/password (/auth/login, /auth/me, /auth/logout). Semua akun dibuat admin di menu User.
 - Role-based routing & RBAC on backend endpoints
 - Unit Registry CRUD (admin only)
 - Operations Report (all roles; operator sees own)

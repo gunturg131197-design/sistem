@@ -64,7 +64,6 @@ services:
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
       - ADMIN_NAME=${ADMIN_NAME:-Administrator}
-      - ADMIN_EMAILS=${ADMIN_EMAILS:-}
     depends_on:
       mariadb:
         condition: service_healthy

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { GoogleLogoIcon, UserIcon, LockIcon, ArrowRightIcon, ClockIcon, FileTextIcon, WrenchIcon } from "@phosphor-icons/react";
+import { UserIcon, LockIcon, ArrowRightIcon, ClockIcon, FileTextIcon, WrenchIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,18 +10,12 @@ import { useNavigate } from "react-router-dom";
 import { BrandLockup, BrandMark } from "@/components/Brand";
 import logoFull from "@/assets/logo-full.jpg";
 
-// REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 export default function Login() {
   const { setUser } = useAuth();
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-
-  const handleGoogleLogin = () => {
-    const redirectUrl = window.location.origin + "/";
-    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
-  };
 
   const handlePasswordLogin = async (e) => {
     e.preventDefault();
@@ -104,23 +98,9 @@ export default function Login() {
               </Button>
             </form>
 
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-px bg-border" />
-              <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">atau</span>
-              <div className="flex-1 h-px bg-border" />
-            </div>
-
-            <div className="space-y-2">
-              <Button
-                data-testid="google-login-button"
-                onClick={handleGoogleLogin}
-                className="w-full h-12 rounded-sm bg-secondary text-foreground font-display font-black tracking-tight text-sm hover:bg-primary hover:text-primary-foreground flex items-center justify-center gap-3 border border-border"
-              >
-                <GoogleLogoIcon size={20} weight="bold" />
-                LOGIN DENGAN GOOGLE
-              </Button>
-              <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">Untuk admin / owner</p>
-            </div>
+            <p data-testid="login-account-note" className="font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+              Akun dibuat oleh admin. Lupa password? Hubungi admin.
+            </p>
           </div>
 
           <footer className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
