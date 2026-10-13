@@ -67,6 +67,13 @@ Pastikan GitHub App Coolify (Sources → GitHub App) punya akses ke repo `sistem
 
 Tanpa secret `COOLIFY_TOKEN`, langkah pemicu dilewati (mengandalkan Cara 1) tapi verifikasi tetap berjalan.
 
+### Memastikan versi terbaru sudah tayang
+
+`https://trirara.my.id/api/health/live` → `{"status":"alive","version":"<7 karakter commit>", ...}`.
+Bandingkan `version` dengan commit terakhir di GitHub `main`. Bila berbeda/`null` → deploy terbaru belum jalan.
+Detail lengkap (versi, waktu build & startup, status MariaDB): login admin → **Bantuan & Backup → Status Sistem**.
+Commit terbaca dari env `SOURCE_COMMIT` yang disediakan Coolify (bawaan "Runtime only"); waktu build dari `/app/build_info.json`.
+
 ### Troubleshooting cepat
 
 | Gejala | Penyebab | Solusi |
