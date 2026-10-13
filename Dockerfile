@@ -25,7 +25,7 @@ ENV REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL} \
     GENERATE_SOURCEMAP=false \
     DISABLE_ESLINT_PLUGIN=true \
     CI=false \
-    NODE_OPTIONS=--max-old-space-size=3072
+    NODE_OPTIONS=--max-old-space-size=1536
 
 # Layer dependency terpisah agar cache build dipakai ulang bila hanya kode yang berubah
 COPY frontend/package.json frontend/yarn.lock* ./
