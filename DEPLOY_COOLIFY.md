@@ -46,6 +46,27 @@ bila timezone server/instance Coolify = UTC, pakai kolom UTC.
 | wa-piutang-reminder | `python scripts/cron_call.py piutang-reminder` | `0 * * * *` | `0 * * * *` |
 | wa-weekly-owner-report | `python scripts/cron_call.py weekly-report` | `0 8 * * 1` | `0 0 * * 1` |
 
+### Deploy otomatis setiap push ke `main`
+
+**Cara 1 — Auto Deploy Coolify (utama, tanpa token):**
+Coolify → aplikasi → **Advanced** (atau **Configuration → Advanced**) → nyalakan **Auto Deploy** → Save.
+Repo tersambung lewat GitHub App, jadi setiap push/merge ke `main` langsung memicu Redeploy.
+Pastikan GitHub App Coolify (Sources → GitHub App) punya akses ke repo `sistem` dan **Webhook URL** mengarah ke
+`http://103.150.197.131:8000` (bisa dijangkau dari internet).
+
+**Cara 2 — GitHub Actions (cadangan + verifikasi):** template di `deploy/github-actions/coolify-deploy.yml`
+0. Aktifkan sekali lewat browser GitHub (tidak butuh izin token): buka file template di GitHub → salin isinya →
+   **Add file → Create new file** → nama `.github/workflows/coolify-deploy.yml` → tempel → **Commit changes** ke `main`.
+1. Coolify → Keys & Tokens → **API tokens** → Create (izin `deploy`) → salin token `angka|teks`.
+2. GitHub repo → Settings → Secrets and variables → Actions → **New repository secret**:
+   `COOLIFY_TOKEN` = token tadi.
+3. Setiap push ke `main` (selain perubahan tes/dokumen): workflow memanggil
+   `GET /api/v1/deploy?uuid=ecmsxkyycmjajbinmcbpxshl`, menunggu `https://trirara.my.id/api/health/live` = 200
+   (maks 20 menit), lalu mengecek `/api/health` (MariaDB). Hasil tampil hijau/merah di tab **Actions**.
+4. Deploy manual: tab Actions → **Deploy Coolify** → Run workflow (opsi *force* = rebuild tanpa cache).
+
+Tanpa secret `COOLIFY_TOKEN`, langkah pemicu dilewati (mengandalkan Cara 1) tapi verifikasi tetap berjalan.
+
 ### Troubleshooting cepat
 
 | Gejala | Penyebab | Solusi |
