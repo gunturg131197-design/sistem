@@ -90,7 +90,10 @@ def build_system_status_router(db, require_admin: Callable, boot: dict) -> APIRo
             except Exception:  # noqa: BLE001
                 pass
         except Exception as e:  # noqa: BLE001
-            dbinfo["error"] = boot.get("db_error") or f"{type(e).__name__}: {str(e).splitlines()[0][:200]}"
+            dbinfo["error"] = boot.get("config_error") or boot.get("db_error") or f"{type(e).__name__}: {str(e).splitlines()[0][:200]}"
+        if boot.get("config_error"):
+            dbinfo["ok"], dbinfo["error"] = False, boot["config_error"]
+        dbinfo["config_warnings"] = boot.get("config_warnings") or []
         on_coolify = bool(os.environ.get("COOLIFY_RESOURCE_UUID") or os.environ.get("COOLIFY_FQDN"))
         return {
             "checked_at": now.isoformat(),
