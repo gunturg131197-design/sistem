@@ -99,3 +99,4 @@ Aplikasi sistem pelaporan untuk alat berat excavator. Fields: unit excavator, no
 - requirements.txt: + SQLAlchemy[asyncio], asyncmy, greenlet, Pillow (bug lama: PIL di-import tanpa terdaftar); − motor. pymongo tetap (bson + migrasi).
 - Preview Emergent: MariaDB lokal via scripts/preview_mariadb.sh (data di /app/.mariadb_data), auto-start oleh backend bila PREVIEW_MARIADB_AUTOSTART=1.
 - PR #6: .env.example lengkap + backend/scripts/cron_call.py (Coolify Scheduled Tasks untuk 4 cron WA). https://github.com/gunturg131197-design/sistem/pull/6
+- PR #6 di-merge (a9779c7): run.py multi-port (PORT + EXTRA_PORTS=3000), curl/wget di image, HEALTHCHECK curl /api/health/live. Produksi masih 503 per 03:44 WITA, auto-deploy tampaknya nonaktif; perlu Redeploy manual. Testing iteration_11: 100% lulus.
