@@ -51,6 +51,7 @@ bila timezone server/instance Coolify = UTC, pakai kolom UTC.
 | Gejala | Penyebab | Solusi |
 |---|---|---|
 | `no available server` (503 Traefik) | Container belum healthy / mati, atau Ports Exposes salah | Ports Exposes = `8000`; lihat tab **Logs** container. Setelah versi ini, container tetap hidup walau DB gagal |
+| Health Check Coolify selalu gagal | Health Check bawaan Coolify menjalankan `curl`/`wget` di dalam container | Image sudah berisi `curl` & `wget`. Bila diaktifkan isi: Path `/api/health/live`, Port `8000`, Scheme `http` |
 | `/api/health` → `"status":"error"` + `Name or service not known` | `DB_HOST` salah / beda network | Isi `DB_HOST` = *Internal host* MariaDB (bukan `localhost`, bukan `mariadb` kecuali memang namanya). Aktifkan **Connect to Predefined Network** di app & database |
 | `/api/health` → `Access denied for user` | `DB_USERNAME` / `DB_PASSWORD` tidak sama dengan resource MariaDB | Salin persis dari halaman database Coolify |
 | `/api/health` → `Unknown database` | `DB_DATABASE` salah | Samakan dengan "Initial Database" MariaDB |

@@ -64,7 +64,13 @@ ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     TZ=Asia/Makassar \
     PORT=8000 \
+    EXTRA_PORTS=3000 \
     STATIC_DIR=/app/static
+
+# curl & wget: dibutuhkan "Health Check" bawaan Coolify (dijalankan di dalam container)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl wget ca-certificates tzdata \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --system --gid 10001 app && useradd --system --uid 10001 --gid app --home /app app
 WORKDIR /app
@@ -72,15 +78,16 @@ WORKDIR /app
 COPY --from=backend-build /opt/venv /opt/venv
 COPY --chown=app:app backend/ /app/
 COPY --from=frontend-build --chown=app:app /build/build /app/static
-RUN rm -f /app/.env /app/requirements.txt && mkdir -p /app/backups && chown app:app /app/backups
+RUN rm -f /app/.env /app/requirements.txt && mkdir -p /app/backups && chown app:app /app /app/backups
 
 USER app
-EXPOSE 8000
+# 8000 = port utama (isi "Ports Exposes" Coolify = 8000). 3000 = cadangan bila Ports Exposes masih bawaan Coolify.
+EXPOSE 8000 3000
 
 # Liveness: proses hidup (selalu 200 meski DB belum siap) agar Traefik tetap meneruskan trafik.
 # Status database lengkap: buka https://DOMAIN/api/health
 HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=3 \
-  CMD python -c "import os,urllib.request;urllib.request.urlopen('http://127.0.0.1:%s/api/health/live' % os.environ.get('PORT','8000'), timeout=4)" || exit 1
+  CMD curl -fsS "http://127.0.0.1:${PORT:-8000}/api/health/live" >/dev/null || exit 1
 
-# 1 worker: tugas startup (migrasi/backfill) & penjadwal internal harus berjalan tunggal
-CMD ["sh", "-c", "exec uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips '*' --timeout-keep-alive 30"]
+# 1 proses uvicorn (tugas startup & penjadwal internal berjalan tunggal), listen di PORT + EXTRA_PORTS
+CMD ["python", "run.py"]
