@@ -942,3 +942,56 @@ def build_url_from_env(env: dict) -> str:
     user = pick("DB_USERNAME", "DB_USER", "MARIADB_USER", default="trirara")
     pwd = pick("DB_PASSWORD", "MARIADB_PASSWORD")
     return f"mysql+asyncmy://{quote_plus(user)}:{quote_plus(pwd)}@{host}:{port}/{name}?charset=utf8mb4"
+
+
+_FALLBACK_URL = "mysql+asyncmy://belum-dikonfigurasi:@127.0.0.1:3306/trirara?charset=utf8mb4"
+
+
+def resolve_db_url(env: dict):
+    """Seperti build_url_from_env, tapi TIDAK PERNAH melempar error (salah konfigurasi tidak boleh membuat
+    container crash/restart). Memperbaiki kesalahan umum & mengembalikan (url, peringatan[], error|None).
+
+    - DB_HOST / MARIADB_HOST berisi URL lengkap (mysql://user:pass@host:3306/db, disalin dari Coolify) → dipakai sbg URL
+    - DB_HOST berisi host:port → dipisah
+    - DB_PORT bukan angka → 3306 (+ peringatan)
+    - URL akhir tidak valid → URL cadangan (DB tidak tersambung, server tetap hidup) + error yang jelas
+    Pesan tidak pernah memuat password.
+    """
+    from sqlalchemy.engine import make_url
+    env = {k: (v if v is None else str(v)) for k, v in dict(env).items()}
+    warnings = []
+    for hk in ("DB_HOST", "MARIADB_HOST"):
+        hv = (env.get(hk) or "").strip().strip('"').strip("'")
+        if "://" in hv and not (env.get("MARIADB_URL") or env.get("DATABASE_URL")):
+            env["MARIADB_URL"] = hv
+            env[hk] = ""
+            warnings.append(f"{hk} berisi URL lengkap — dipakai sebagai MARIADB_URL")
+        elif hv.count(":") == 1 and hv.rsplit(":", 1)[1].strip().isdigit():
+            h, p = hv.rsplit(":", 1)
+            env[hk] = h.strip()
+            pk = hk.replace("HOST", "PORT")
+            if not (env.get(pk) or "").strip():
+                env[pk] = p.strip()
+            warnings.append(f"{hk} berisi host:port — dipisah menjadi host & port")
+    for pk in ("DB_PORT", "MARIADB_PORT"):
+        pv = (env.get(pk) or "").strip()
+        if pv and not pv.isdigit():
+            env[pk] = "3306"
+            warnings.append(f"{pk} bukan angka — memakai 3306")
+    try:
+        url = build_url_from_env(env)
+        u = make_url(url)
+        _ = u.port  # memvalidasi port (int) — make_url melempar ValueError bila port bukan angka
+        if not u.host:
+            raise ValueError("host database kosong")
+        return url, warnings, None
+    except Exception as e:  # noqa: BLE001
+        msg = str(e).splitlines()[0][:160] if str(e) else type(e).__name__
+        import re as _re
+        msg = _re.sub(r"[A-Za-z][A-Za-z0-9+.-]*://\S+", "<URL disamarkan>", msg)  # URL bisa memuat password
+        for k in ("DB_PASSWORD", "MARIADB_PASSWORD"):  # jangan pernah bocorkan password di pesan
+            secret = (env.get(k) or "").strip()
+            if len(secret) >= 3:
+                msg = msg.replace(secret, "***")
+        return _FALLBACK_URL, warnings, (f"Konfigurasi database tidak valid ({type(e).__name__}: {msg}). "
+                                         "Periksa format MARIADB_URL / DB_HOST / DB_PORT di Environment Variables.")

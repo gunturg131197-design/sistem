@@ -2,7 +2,7 @@ from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depend
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from mariadb_store import Store, ReturnDocument, build_url_from_env
+from mariadb_store import Store, ReturnDocument, resolve_db_url
 import os
 import logging
 import uuid
@@ -24,9 +24,21 @@ from bonus import build_bonus_router, ensure_bonus_indexes
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# Database: MariaDB (lihat mariadb_store.py & db_schema.py). Koneksi dari MARIADB_URL atau MARIADB_HOST/PORT/USER/PASSWORD/DATABASE.
-_DB_URL = build_url_from_env(dict(os.environ))
-db = Store(_DB_URL)
+# Database: MariaDB (lihat mariadb_store.py & db_schema.py). Koneksi dari MARIADB_URL atau DB_* / MARIADB_*.
+# resolve_db_url() tidak pernah melempar error: salah format env tidak boleh membuat container crash (Restarting → 503).
+_DB_URL, _DB_CFG_WARNINGS, _DB_CFG_ERROR = resolve_db_url(dict(os.environ))
+for _w in _DB_CFG_WARNINGS:
+    logging.getLogger(__name__).warning(f"[mariadb] konfigurasi: {_w}")
+if _DB_CFG_ERROR:
+    logging.getLogger(__name__).error(f"[mariadb] {_DB_CFG_ERROR}")
+try:
+    db = Store(_DB_URL)
+except Exception as _e:  # noqa: BLE001  — jaga-jaga: engine gagal dibuat → pakai URL cadangan, server tetap hidup
+    _DB_CFG_ERROR = _DB_CFG_ERROR or f"Engine database gagal dibuat ({type(_e).__name__}). Periksa env database."
+    logging.getLogger(__name__).error(f"[mariadb] {_DB_CFG_ERROR}")
+    from mariadb_store import _FALLBACK_URL
+    _DB_URL = _FALLBACK_URL
+    db = Store(_DB_URL)
 
 
 def _safe_target(url: str) -> str:
@@ -40,7 +52,8 @@ def _safe_target(url: str) -> str:
 
 # Status boot: startup berjalan di background agar HTTP (healthcheck/Traefik) langsung hidup walau DB belum siap
 BOOT = {"ready": False, "db_error": "", "db_attempts": 0, "target": _safe_target(_DB_URL), "task": None,
-        "started_at": datetime.now(timezone.utc), "ready_at": None}
+        "started_at": datetime.now(timezone.utc), "ready_at": None,
+        "config_error": _DB_CFG_ERROR, "config_warnings": list(_DB_CFG_WARNINGS)}
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -56,6 +69,11 @@ async def _init_mariadb():
     autostart = os.environ.get("PREVIEW_MARIADB_AUTOSTART", "") in ("1", "true", "yes")
     started = False
     lg.info(f"[mariadb] target koneksi: {BOOT['target']}")
+    if BOOT.get("config_error"):
+        # Format env salah → tidak ada gunanya mencoba konek. Server tetap hidup; error tampil di /api/health.
+        while True:
+            lg.error(f"[mariadb] {BOOT['config_error']} — perbaiki env lalu Redeploy")
+            await _asyncio.sleep(60)
     attempt = 0
     # Coba terus (berjalan di background, HTTP server tetap hidup) — status terlihat di /api/health
     while True:
@@ -1358,6 +1376,12 @@ app.include_router(build_bonus_router(db, require_admin, next_bukti))
 async def health():
     """Readiness untuk Coolify/diagnosa: cek koneksi MariaDB + status startup (tanpa membocorkan password)."""
     info = {"database": "mariadb", "target": BOOT["target"], "startup_ready": BOOT["ready"]}
+    if BOOT.get("config_warnings"):
+        info["config_warnings"] = BOOT["config_warnings"]
+    if BOOT.get("config_error"):
+        return JSONResponse({"status": "error", **info, "detail": BOOT["config_error"], "attempts": BOOT["db_attempts"],
+                             "hint": "Format env database salah. Contoh benar: DB_HOST=<internal host MariaDB> DB_PORT=3306, "
+                                     "atau MARIADB_URL=mysql://user:pass@host:3306/db"}, status_code=503)
     try:
         await db.ping()
         return {"status": "ok", "db": db.name, **info}
