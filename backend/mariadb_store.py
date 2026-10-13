@@ -918,8 +918,15 @@ def build_url_from_env(env: dict) -> str:
     2. DB_HOST / DB_PORT / DB_DATABASE / DB_USERNAME / DB_PASSWORD   (format standar Coolify)
     3. MARIADB_HOST / MARIADB_PORT / MARIADB_DATABASE / MARIADB_USER / MARIADB_PASSWORD (docker-compose)
     """
-    url = (env.get("MARIADB_URL") or env.get("DATABASE_URL") or "").strip()
+    url = (env.get("MARIADB_URL") or env.get("DATABASE_URL") or "").strip().strip('"').strip("'")
     if url and "://" in url and not url.startswith(("mongodb", "postgres", "sqlite")):
+        # URL internal Coolify berbentuk mysql://user:pass@host:3306/db → pakai driver async asyncmy
+        scheme, rest = url.split("://", 1)
+        if scheme.lower() in ("mysql", "mariadb", "mysql+pymysql", "mysql+mysqldb", "mysql+aiomysql",
+                              "mariadb+pymysql", "mariadb+asyncmy", "mariadb+mysqldb"):
+            url = "mysql+asyncmy://" + rest
+        if "charset=" not in url:
+            url += ("&" if "?" in url else "?") + "charset=utf8mb4"
         return url
     from urllib.parse import quote_plus
 
