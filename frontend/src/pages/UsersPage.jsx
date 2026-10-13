@@ -12,10 +12,12 @@ import {
   PlusIcon, TrashIcon, UserPlusIcon, KeyIcon, EyeIcon, EyeSlashIcon, CopyIcon, ShieldCheckIcon, LockKeyIcon,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
+import { useAuth } from "@/context/AuthContext";
 
 const empty = { name: "", email: "", role: "operator", pin: "", username: "", password: "" };
 
 export default function UsersPage() {
+  const { user: me } = useAuth();
   const [users, setUsers] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(empty);
@@ -36,7 +38,7 @@ export default function UsersPage() {
       await api.patch(`/users/${uid}/role`, { role });
       toast.success("Role diperbarui");
       load();
-    } catch { toast.error("Gagal update role"); }
+    } catch (e) { toast.error(e?.response?.data?.detail || "Gagal update role"); }
   };
 
   const addManual = async () => {
@@ -53,7 +55,7 @@ export default function UsersPage() {
         username: form.username.trim() || null,
         password: form.password || null,
       });
-      toast.success("Operator ditambahkan");
+      toast.success("User ditambahkan");
       setOpen(false); setForm(empty); load();
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Gagal menambahkan");
@@ -62,18 +64,24 @@ export default function UsersPage() {
 
   const savePassword = async () => {
     const pw = (passwordDialog.password || "").trim();
+    const needUsername = !passwordDialog.user.username;
+    const uname = (passwordDialog.username || "").trim();
+    if (needUsername && !uname) { toast.error("Username wajib diisi"); return; }
     if (!pw || pw.length < 4) { toast.error("Password minimal 4 karakter"); return; }
     try {
-      await api.patch(`/users/${passwordDialog.user.user_id}/password`, { password: pw });
-      toast.success("Password diperbarui");
-      setPasswordDialog(null);
+      await api.patch(`/users/${passwordDialog.user.user_id}/password`, {
+        password: pw,
+        username: needUsername ? uname : null,
+      });
+      toast.success(needUsername ? "Akun login dibuat" : "Password diperbarui");
+      setPasswordDialog(null); load();
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Gagal menyimpan password");
     }
   };
 
   const removeUser = async (uid) => {
-    if (!window.confirm("Hapus operator manual ini?")) return;
+    if (!window.confirm("Hapus user ini? User tidak akan bisa login lagi.")) return;
     try {
       await api.delete(`/users/${uid}`);
       toast.success("Terhapus"); load();
@@ -117,22 +125,22 @@ export default function UsersPage() {
     <div>
       <PageHeader
         overline="// Access Control / 05"
-        title="Manajemen Operator"
-        description="Kelola akses tim. Tambahkan operator manual dengan PIN 4-6 digit untuk verifikasi shift di lapangan tanpa perlu login Google."
+        title="Manajemen User"
+        description="Semua akun dibuat oleh admin. Tambahkan user dengan username & password untuk login, serta PIN 4-6 digit untuk verifikasi shift di lapangan."
         actions={
           <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setForm(empty); }}>
             <DialogTrigger asChild>
               <Button data-testid="add-manual-operator-button" className="rounded-sm bg-primary hover:bg-primary/90 text-black hover:text-black font-display tracking-tight">
-                <UserPlusIcon size={16} weight="bold" className="mr-1.5" /> Tambah Operator Manual
+                <UserPlusIcon size={16} weight="bold" className="mr-1.5" /> Tambah User
               </Button>
             </DialogTrigger>
             <DialogContent className="rounded-sm border-border bg-card">
               <DialogHeader>
-                <DialogTitle className="font-display font-black tracking-tighter text-2xl">Tambah Operator Manual</DialogTitle>
+                <DialogTitle className="font-display font-black tracking-tighter text-2xl">Tambah User</DialogTitle>
               </DialogHeader>
               <div className="space-y-3">
                 <div>
-                  <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Nama Operator</Label>
+                  <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Nama</Label>
                   <Input data-testid="input-manual-name" className="rounded-sm mt-1.5" placeholder="Contoh: Budi Santoso" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
                 </div>
                 <div>
@@ -168,7 +176,7 @@ export default function UsersPage() {
                 </div>
 
                 <div className="border-t border-border pt-3">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-primary mb-2">// Akun Login (Opsional)</p>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-primary mb-2">// Akun Login</p>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Username</Label>
@@ -193,7 +201,7 @@ export default function UsersPage() {
                     </div>
                   </div>
                   <p className="mt-1.5 font-mono text-[10px] text-muted-foreground">
-                    Isi keduanya jika operator perlu login sendiri lewat halaman login. Kosongkan jika hanya pencatatan.
+                    Isi keduanya agar user bisa login. Kosongkan bila hanya untuk pencatatan (bisa dibuatkan akun nanti).
                   </p>
                 </div>
               </div>
@@ -211,9 +219,9 @@ export default function UsersPage() {
         <table className="w-full text-sm">
           <thead className="bg-muted/50">
             <tr className="text-left font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
-              <th className="p-3">Operator</th>
+              <th className="p-3">User</th>
               <th className="p-3">Email</th>
-              <th className="p-3">Tipe</th>
+              <th className="p-3">Akses</th>
               <th className="p-3 w-40">Role</th>
               <th className="p-3">PIN Shift</th>
               <th className="p-3 text-right w-32">Aksi</th>
@@ -241,8 +249,8 @@ export default function UsersPage() {
                   ) : u.email}
                 </td>
                 <td className="p-3">
-                  <Badge className={`rounded-sm text-[9px] font-mono uppercase tracking-widest px-1.5 py-0 ${u.manual ? "bg-secondary text-foreground" : "bg-primary/20 text-primary border border-primary/40"}`}>
-                    {u.manual ? "Manual" : "Google"}
+                  <Badge data-testid={`access-badge-${u.user_id}`} className={`rounded-sm text-[9px] font-mono uppercase tracking-widest px-1.5 py-0 ${u.username ? "bg-primary/20 text-primary border border-primary/40" : "bg-secondary text-muted-foreground"}`}>
+                    {u.username ? "Akun Login" : "Tanpa Login"}
                   </Badge>
                 </td>
                 <td className="p-3">
@@ -255,8 +263,7 @@ export default function UsersPage() {
                   </Select>
                 </td>
                 <td className="p-3">
-                  {u.manual ? (
-                    u.pin ? (
+                  {u.pin ? (
                       <div className="inline-flex items-center gap-1.5 border border-primary/40 bg-primary/5 px-2 py-1">
                         <KeyIcon size={12} weight="bold" className="text-primary" />
                         <span data-testid={`pin-value-${u.user_id}`} className="font-mono text-xs tracking-[0.35em] text-primary">
@@ -281,15 +288,11 @@ export default function UsersPage() {
                       </div>
                     ) : (
                       <span className="font-mono text-[10px] text-muted-foreground">— tidak diset —</span>
-                    )
-                  ) : (
-                    <span className="font-mono text-[10px] text-muted-foreground">n/a</span>
                   )}
                 </td>
                 <td className="p-3 text-right">
                   <div className="inline-flex gap-1">
-                    {u.manual && (
-                      <>
+                    <>
                         <button
                           data-testid={`set-pin-${u.user_id}`}
                           onClick={() => setPinDialog({ user: u, pin: u.pin || "" })}
@@ -308,26 +311,25 @@ export default function UsersPage() {
                             <ShieldCheckIcon size={14} weight="bold" />
                           </button>
                         )}
-                        {u.username && (
+                        <button
+                          data-testid={`reset-password-${u.user_id}`}
+                          onClick={() => setPasswordDialog({ user: u, password: "", username: "" })}
+                          className="p-1.5 border border-border hover:border-primary hover:text-primary"
+                          title={u.username ? "Reset Password" : "Buat Akun Login"}
+                        >
+                          <LockKeyIcon size={14} weight="bold" />
+                        </button>
+                        {u.user_id !== me?.user_id && (
                           <button
-                            data-testid={`reset-password-${u.user_id}`}
-                            onClick={() => setPasswordDialog({ user: u, password: "" })}
-                            className="p-1.5 border border-border hover:border-primary hover:text-primary"
-                            title="Reset Password"
+                            data-testid={`delete-user-${u.user_id}`}
+                            onClick={() => removeUser(u.user_id)}
+                            className="p-1.5 border border-border hover:border-accent hover:text-accent"
+                            title="Hapus"
                           >
-                            <LockKeyIcon size={14} weight="bold" />
+                            <TrashIcon size={14} weight="bold" />
                           </button>
                         )}
-                        <button
-                          data-testid={`delete-user-${u.user_id}`}
-                          onClick={() => removeUser(u.user_id)}
-                          className="p-1.5 border border-border hover:border-accent hover:text-accent"
-                          title="Hapus"
-                        >
-                          <TrashIcon size={14} weight="bold" />
-                        </button>
-                      </>
-                    )}
+                    </>
                   </div>
                 </td>
               </tr>
@@ -406,11 +408,24 @@ export default function UsersPage() {
         <DialogContent className="rounded-sm border-border bg-card">
           <DialogHeader>
             <DialogTitle className="font-display font-black tracking-tighter text-2xl flex items-center gap-2">
-              <LockKeyIcon size={22} weight="bold" className="text-primary" /> Reset Password
+              <LockKeyIcon size={22} weight="bold" className="text-primary" /> {passwordDialog?.user?.username ? "Reset Password" : "Buat Akun Login"}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">Operator: <span className="font-medium text-foreground">{passwordDialog?.user?.name}</span> · Username: <span className="font-mono text-primary">@{passwordDialog?.user?.username}</span></p>
+            <p className="text-sm text-muted-foreground">User: <span className="font-medium text-foreground">{passwordDialog?.user?.name}</span>{passwordDialog?.user?.username && (<> · Username: <span className="font-mono text-primary">@{passwordDialog?.user?.username}</span></>)}</p>
+            {passwordDialog && !passwordDialog.user.username && (
+              <div>
+                <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Username</Label>
+                <Input
+                  data-testid="input-new-username"
+                  className="rounded-sm mt-1.5 font-mono"
+                  placeholder="andi_op"
+                  value={passwordDialog.username || ""}
+                  onChange={e => setPasswordDialog({ ...passwordDialog, username: e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "") })}
+                  autoFocus
+                />
+              </div>
+            )}
             <div>
               <Label className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Password Baru (min 4 karakter)</Label>
               <Input
@@ -421,10 +436,10 @@ export default function UsersPage() {
                 value={passwordDialog?.password || ""}
                 onChange={e => setPasswordDialog({ ...passwordDialog, password: e.target.value })}
                 onKeyDown={e => { if (e.key === "Enter") savePassword(); }}
-                autoFocus
+                autoFocus={!!passwordDialog?.user?.username}
               />
               <p className="mt-1.5 font-mono text-[10px] text-muted-foreground">
-                Setelah simpan, beritahu operator password baru untuk login.
+                Setelah simpan, beritahu user username & password untuk login.
               </p>
             </div>
           </div>

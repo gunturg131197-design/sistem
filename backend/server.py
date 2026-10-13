@@ -145,11 +145,6 @@ def normalize_username(u: str) -> str:
     return (u or "").strip().lower()
 
 
-# Admin allowlist (owner) — bisa ditambah via env ADMIN_EMAILS (dipisah koma)
-_env_admin_emails = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
-ADMIN_EMAILS = {"shanchidean@gmail.com"} | _env_admin_emails
-
-
 # ---------- Models ----------
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -159,10 +154,6 @@ class User(BaseModel):
     picture: str = ""
     role: str = "operator"  # admin | operator
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
-class SessionRequest(BaseModel):
-    session_id: str
 
 
 class Unit(BaseModel):
@@ -325,6 +316,7 @@ class ManualOperatorCreate(BaseModel):
 
 class PasswordUpdate(BaseModel):
     password: str
+    username: Optional[str] = None  # wajib bila user belum punya username
 
 
 class UsernameLogin(BaseModel):
@@ -361,6 +353,9 @@ async def get_current_user(
         token = authorization.split(" ", 1)[1]
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    if not token.startswith("local_"):
+        # Login Google sudah dihapus — sesi lama hasil OAuth tidak berlaku lagi.
+        raise HTTPException(status_code=401, detail="Invalid session")
 
     session_doc = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
     if not session_doc:
@@ -387,70 +382,6 @@ async def require_admin(user: User = Depends(get_current_user)) -> User:
 
 
 # ---------- Auth Endpoints ----------
-@api_router.post("/auth/session")
-async def create_session(body: SessionRequest, response: Response):
-    async with httpx.AsyncClient(timeout=15.0) as hc:
-        r = await hc.get(
-            "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
-            headers={"X-Session-ID": body.session_id},
-        )
-    if r.status_code != 200:
-        raise HTTPException(status_code=401, detail="Invalid session id")
-    data = r.json()
-    email = data["email"]
-    name = data.get("name", email.split("@")[0])
-    picture = data.get("picture", "")
-    session_token = data["session_token"]
-
-    existing = await db.users.find_one({"email": email}, {"_id": 0})
-    if existing:
-        user_id = existing["user_id"]
-        role = existing.get("role", "operator")
-        if email in ADMIN_EMAILS and role != "admin":
-            await db.users.update_one({"user_id": user_id}, {"$set": {"role": "admin"}})
-            role = "admin"
-        await db.users.update_one(
-            {"user_id": user_id},
-            {"$set": {"name": name, "picture": picture}},
-        )
-    else:
-        user_id = f"user_{uuid.uuid4().hex[:12]}"
-        role = "admin" if email in ADMIN_EMAILS else "operator"
-        await db.users.insert_one({
-            "user_id": user_id,
-            "email": email,
-            "name": name,
-            "picture": picture,
-            "role": role,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
-
-    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
-    await db.user_sessions.insert_one({
-        "user_id": user_id,
-        "session_token": session_token,
-        "expires_at": expires_at.isoformat(),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    })
-
-    response.set_cookie(
-        key="session_token",
-        value=session_token,
-        max_age=7 * 24 * 60 * 60,
-        httponly=True,
-        secure=True,
-        samesite="none",
-        path="/",
-    )
-    return {
-        "user_id": user_id,
-        "email": email,
-        "name": name,
-        "picture": picture,
-        "role": role,
-    }
-
-
 @api_router.get("/auth/me")
 async def auth_me(user: User = Depends(get_current_user)):
     return user.model_dump()
@@ -477,7 +408,7 @@ async def list_users(user: User = Depends(get_current_user)):
     if user.role != "admin":
         # operator can only see themselves
         return [user.model_dump()]
-    users = await db.users.find({}, {"_id": 0}).to_list(1000)
+    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(1000)
     return users
 
 
@@ -485,6 +416,14 @@ async def list_users(user: User = Depends(get_current_user)):
 async def update_role(user_id: str, body: RoleUpdate, admin: User = Depends(require_admin)):
     if body.role not in {"admin", "operator"}:
         raise HTTPException(status_code=400, detail="Invalid role")
+    target = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan")
+    if body.role != "admin" and target.get("role") == "admin":
+        if user_id == admin.user_id:
+            raise HTTPException(status_code=400, detail="Tidak bisa menurunkan role akun Anda sendiri")
+        if await db.users.count_documents({"role": "admin"}) <= 1:
+            raise HTTPException(status_code=400, detail="Minimal harus ada satu admin")
     await db.users.update_one({"user_id": user_id}, {"$set": {"role": body.role}})
     return {"ok": True}
 
@@ -540,14 +479,21 @@ async def update_password(user_id: str, body: PasswordUpdate, admin: User = Depe
     user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
     if not user_doc:
         raise HTTPException(status_code=404, detail="User tidak ditemukan")
-    if not user_doc.get("manual"):
-        raise HTTPException(status_code=400, detail="Password hanya untuk operator manual")
-    if not user_doc.get("username"):
-        raise HTTPException(status_code=400, detail="Set username lebih dulu")
     if not body.password or len(body.password) < 4:
         raise HTTPException(status_code=400, detail="Password minimal 4 karakter")
-    await db.users.update_one({"user_id": user_id}, {"$set": {"password_hash": hash_password(body.password)}})
-    return {"ok": True}
+    updates = {"password_hash": hash_password(body.password)}
+    if not user_doc.get("username"):
+        # User lama (eks-login Google) belum punya username → admin wajib menetapkannya
+        username = normalize_username(body.username)
+        if not username:
+            raise HTTPException(status_code=400, detail="Username wajib diisi untuk user ini")
+        if not username.replace("_", "").replace(".", "").replace("-", "").isalnum():
+            raise HTTPException(status_code=400, detail="Username hanya boleh huruf, angka, . _ -")
+        if await db.users.find_one({"username": username}, {"_id": 0}):
+            raise HTTPException(status_code=400, detail="Username sudah dipakai")
+        updates["username"] = username
+    await db.users.update_one({"user_id": user_id}, {"$set": updates})
+    return {"ok": True, "username": updates.get("username", user_doc.get("username"))}
 
 
 @api_router.post("/auth/login")
@@ -592,8 +538,6 @@ async def update_pin(user_id: str, body: PinUpdate, admin: User = Depends(requir
     user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
     if not user_doc:
         raise HTTPException(status_code=404, detail="User tidak ditemukan")
-    if not user_doc.get("manual"):
-        raise HTTPException(status_code=400, detail="PIN hanya untuk operator manual")
     pin = _validate_pin(body.pin)
     await db.users.update_one({"user_id": user_id}, {"$set": {"pin": pin}})
     return {"ok": True, "pin": pin}
@@ -602,8 +546,8 @@ async def update_pin(user_id: str, body: PinUpdate, admin: User = Depends(requir
 @api_router.post("/users/verify-pin")
 async def verify_pin(body: PinVerify, user: User = Depends(get_current_user)):
     target = await db.users.find_one({"user_id": body.user_id}, {"_id": 0})
-    if not target or not target.get("manual"):
-        raise HTTPException(status_code=404, detail="Operator manual tidak ditemukan")
+    if not target:
+        raise HTTPException(status_code=404, detail="Operator tidak ditemukan")
     stored = target.get("pin")
     if not stored:
         raise HTTPException(status_code=400, detail="Operator ini belum punya PIN")
@@ -620,9 +564,12 @@ async def delete_user(user_id: str, admin: User = Depends(require_admin)):
     user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
     if not user_doc:
         raise HTTPException(status_code=404, detail="User tidak ditemukan")
-    if not user_doc.get("manual"):
-        raise HTTPException(status_code=400, detail="Hanya operator manual yang bisa dihapus")
+    if user_id == admin.user_id:
+        raise HTTPException(status_code=400, detail="Tidak bisa menghapus akun Anda sendiri")
+    if user_doc.get("role") == "admin" and await db.users.count_documents({"role": "admin"}) <= 1:
+        raise HTTPException(status_code=400, detail="Minimal harus ada satu admin")
     await db.users.delete_one({"user_id": user_id})
+    await db.user_sessions.delete_many({"user_id": user_id})
     return {"ok": True}
 
 

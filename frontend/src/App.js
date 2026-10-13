@@ -1,9 +1,8 @@
 import React from "react";
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import Login from "@/pages/Login";
-import AuthCallback from "@/pages/AuthCallback";
 import Dashboard from "@/pages/Dashboard";
 import UnitsPage from "@/pages/UnitsPage";
 import OperationsPage from "@/pages/OperationsPage";
@@ -19,8 +18,6 @@ import HelpPage from "@/pages/HelpPage";
 import BonusAdminPage from "@/pages/BonusAdminPage";
 import AppShell from "@/components/AppShell";
 import "@/App.css";
-
-// REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 
 function ProtectedRoute({ children, adminOnly = false }) {
   const { user, loading } = useAuth();
@@ -39,10 +36,6 @@ function ProtectedRoute({ children, adminOnly = false }) {
 }
 
 function AppRouter() {
-  const location = useLocation();
-  if (location.hash?.includes("session_id=")) {
-    return <AuthCallback />;
-  }
   return (
     <Routes>
       <Route path="/login" element={<Login />} />

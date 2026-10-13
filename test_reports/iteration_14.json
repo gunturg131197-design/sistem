@@ -1,0 +1,64 @@
+{
+  "summary": "Completed comprehensive testing of Google login removal feature. All backend APIs working correctly (30/30 tests passed). Frontend UI correctly shows username/password login only, no Google button. User management features (create, update password, PIN, delete) all functional.",
+  "backend_issues": {
+    "critical_bugs": [],
+    "flaky_endpoints": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "Backend: POST /api/auth/session removed (404)",
+    "Backend: Non-local session tokens rejected with 401 'Invalid session'",
+    "Backend: POST /api/auth/login creates session_token starting with 'local_'",
+    "Backend: GET /api/users excludes password_hash from response",
+    "Backend: POST /api/users/manual creates users with optional username/password",
+    "Backend: POST /api/users/manual validates username/password requirements",
+    "Backend: PATCH /api/users/{id}/password requires username for users without one (400)",
+    "Backend: PATCH /api/users/{id}/password rejects duplicate usernames (400)",
+    "Backend: PATCH /api/users/{id}/pin sets/clears PIN",
+    "Backend: POST /users/verify-pin validates PIN correctly",
+    "Backend: DELETE /api/users/{id} prevents deleting self (400)",
+    "Backend: DELETE /api/users/{id} prevents deleting last admin (400)",
+    "Backend: PATCH /api/users/{id}/role prevents demoting self (400)",
+    "Backend: PATCH /api/users/{id}/role prevents demoting last admin (400)",
+    "Frontend: Login page has NO Google login button (data-testid google-login-button not found)",
+    "Frontend: Login page has username/password inputs (login-username-input, login-password-input, login-submit-button)",
+    "Frontend: Login page shows account note 'Akun dibuat oleh admin' (data-testid login-account-note)",
+    "Frontend: Username/password login works and redirects to dashboard",
+    "Frontend: Users page title 'Manajemen User' displayed",
+    "Frontend: 'Tambah User' button present (data-testid add-manual-operator-button)",
+    "Frontend: Create user WITHOUT username/password works",
+    "Frontend: Access badge shows 'Tanpa Login' for users without username (data-testid access-badge-{user_id})",
+    "Frontend: Lock button (data-testid reset-password-{user_id}) opens 'Buat Akun Login' dialog",
+    "Frontend: Dialog has input-new-username and input-new-password fields",
+    "Frontend: Creating login credentials updates access badge to 'Akun Login'",
+    "Frontend: Newly created operator can log in with credentials",
+    "Frontend: Operator redirected from admin-only routes (/users)",
+    "Frontend: Delete button hidden for current logged-in admin",
+    "Frontend: Dashboard loads after admin login",
+    "Frontend: Logout works"
+  ],
+  "test_report_links": [
+    "/app/backend_test_google_removal.py",
+    "/app/.screenshots/01_login_page.png",
+    "/app/.screenshots/02_dashboard_after_login.png",
+    "/app/.screenshots/03_users_page.png",
+    "/app/.screenshots/04_user_created_no_login.png",
+    "/app/.screenshots/05_login_credentials_created.png",
+    "/app/.screenshots/06_operator_logged_in.png",
+    "/app/.screenshots/07_delete_restrictions.png"
+  ],
+  "success_percentage": {
+    "backend": "100% (30/30 tests passed)",
+    "frontend": "100% (all critical features working)"
+  },
+  "updated_files": [
+    "/app/backend_test_google_removal.py"
+  ],
+  "action_item_for_main_agent": "",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_test_itself": false
+}
